@@ -145,16 +145,11 @@ sub test_append_clash
 				 );
     $exp{C}->set_attributes(uid => 3, cid => $ElCid);
 
-    # Since IRIS-293, inserting this message will have the side effect
-    # of renumbering some of the existing messages.  Predict and test
-    # which messages get renumbered.
-    my $nextuid = 4;
     foreach my $s (qw(A B))
     {
 	if ($actual->{"Message $s"}->make_cid() ne $ElCid)
 	{
-	    $exp{$s}->set_attributes(uid => $nextuid, cid => $ElCid);
-	    $nextuid++;
+	    $exp{$s}->set_attributes(cid => $ElCid);
 	}
     }
 
@@ -196,16 +191,11 @@ sub test_double_clash
 				 );
     $exp{D}->set_attributes(uid => 4, cid => $ElCid);
 
-    # Since IRIS-293, inserting this message will have the side effect
-    # of renumbering some of the existing messages.  Predict and test
-    # which messages get renumbered.
-    my $nextuid = 5;
     foreach my $s (qw(A B C))
     {
 	if ($actual->{"Message $s"}->make_cid() ne $ElCid)
 	{
-	    $exp{$s}->set_attributes(uid => $nextuid, cid => $ElCid);
-	    $nextuid++;
+	    $exp{$s}->set_attributes(cid => $ElCid);
 	}
     }
 
@@ -239,21 +229,21 @@ sub test_replication_clash
 
     xlog "generating message A";
     $exp{A} = $self->make_message("Message A", store => $master_store);
-    $exp{A}->set_attributes(uid => 1, cid => $exp{A}->make_cid());
+    $exp{A}->set_attributes(cid => $exp{A}->make_cid());
     $self->run_replication();
     $self->check_messages(\%exp, store => $master_store);
     $self->check_messages(\%exp, store => $replica_store);
 
     xlog "generating message B";
     $exp{B} = $self->make_message("Message B", store => $master_store);
-    $exp{B}->set_attributes(uid => 2, cid => $exp{B}->make_cid());
+    $exp{B}->set_attributes(cid => $exp{B}->make_cid());
     $self->run_replication();
     $self->check_messages(\%exp, store => $master_store);
     $self->check_messages(\%exp, store => $replica_store);
 
     xlog "generating message C";
     $exp{C} = $self->make_message("Message C", store => $master_store);
-    $exp{C}->set_attributes(uid => 3, cid => $exp{C}->make_cid());
+    $exp{C}->set_attributes(cid => $exp{C}->make_cid());
     $self->run_replication();
     my $actual = $self->check_messages(\%exp, store => $master_store);
     $self->check_messages(\%exp, store => $replica_store);
@@ -266,22 +256,21 @@ sub test_replication_clash
 				  store => $master_store,
 				  references => [ $exp{A}, $exp{B}, $exp{C} ],
 				 );
-    $exp{D}->set_attributes(uid => 4, cid => $ElCid);
+    $exp{D}->set_attributes(cid => $ElCid);
 
-    # Since IRIS-293, inserting this message will have the side effect
-    # of renumbering some of the existing messages.  Predict and test
-    # which messages get renumbered.
-    my $nextuid = 5;
     foreach my $s (qw(A B C))
     {
 	if ($actual->{"Message $s"}->make_cid() ne $ElCid)
 	{
-	    $exp{$s}->set_attributes(uid => $nextuid, cid => $ElCid);
-	    $nextuid++;
+	    $exp{$s}->set_attributes(cid => $ElCid);
 	}
     }
 
     $self->run_replication();
+    # Since IRIS-293 was reverted, it now takes *two*
+    # replication runs to propagate the CID renames.
+    $self->run_replication();
+
     $self->check_messages(\%exp, store => $master_store);
     $self->check_messages(\%exp, store => $replica_store);
 }
@@ -385,6 +374,7 @@ sub test_fm_webui_draft
     $exp{B} = $exp{A}->clone();
     $exp{B}->set_headers('Subject', 'Draft message B');
     $exp{B}->set_body("Completely different text here\r\n");
+    $exp{B}->set_attribute(uid => 2);
 
     $self->{store}->write_begin();
     $self->{store}->write_message($exp{B});
