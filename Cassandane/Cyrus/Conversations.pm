@@ -788,7 +788,7 @@ sub test_status
 
     xlog "Add 3rd message, in the 1st conversation";
     $exp{C} = $self->make_message("Message C",
-				  references => $exp{A}->get_header('message-id'));
+				  references => [ $exp{A} ]);
     $ms{inbox} = $ms{conv1} = ++$ms{user};
 
     xlog "Check the STATUS response";
@@ -815,7 +815,7 @@ sub test_status
     $self->{store}->set_folder('inbox.sub');
     $self->{gen}->set_next_uid(1);
     $exp{D} = $self->make_message("Message D",
-				  references => $exp{A}->get_header('message-id'));
+				  references => [ $exp{A} ]);
     $ms{inboxsub} = $ms{conv1} = ++$ms{user};
 
     xlog "Check the STATUS response for inbox";
@@ -948,7 +948,7 @@ sub test_status_replication
 
     xlog "Add 3rd message, in the 1st conversation";
     $exp{C} = $self->make_message("Message C",
-				  references => $exp{A}->get_header('message-id'));
+				  references => [ $exp{A} ]);
     $ms{inbox} = $ms{conv1} = ++$ms{user};
 
     xlog "Check the STATUS response";
@@ -975,7 +975,7 @@ sub test_status_replication
     $self->{store}->set_folder('inbox.sub');
     $self->{gen}->set_next_uid(1);
     $exp{D} = $self->make_message("Message D",
-				  references => $exp{A}->get_header('message-id'));
+				  references => [ $exp{A} ]);
     $ms{inboxsub} = $ms{conv1} = ++$ms{user};
 
     xlog "Check the STATUS response for inbox";
