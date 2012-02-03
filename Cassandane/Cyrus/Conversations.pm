@@ -691,6 +691,11 @@ sub check_status
     my ($self, $folder, %expected) = @_;
 
     my @stores = ($self->{store});
+    if (defined $self->{replica_store})
+    {
+	$self->run_replication();
+	push(@stores, $self->{replica_store});
+    }
 
     foreach my $store (@stores)
     {
@@ -836,6 +841,166 @@ sub test_status
     $self->{store}->set_folder('inbox');
     $self->{store}->_select();
     $talk->store('1:*', '+flags', '(\\Seen)');
+    $ms{inbox} = $ms{conv1} = $ms{conv2} = ++$ms{user};
+
+    xlog "Check the STATUS response for inbox";
+    $self->check_status('inbox',
+		messages => 3,
+		unseen => 0,
+		highestmodseq => $ms{inbox},
+		xconvexists => 2,
+		xconvunseen => 1,
+		xconvmodseq => max($ms{conv1}, $ms{conv2}),
+	    );
+    xlog "Check the STATUS response for inbox.sub";
+    $self->check_status('inbox.sub',
+		messages => 1,
+		unseen => 1,
+		highestmodseq => $ms{inboxsub},
+		xconvexists => 1,
+		xconvunseen => 1,
+		xconvmodseq => $ms{conv2},
+	    );
+}
+
+sub test_status_replication
+{
+    my ($self) = @_;
+
+    xlog "Testing replication of extended STATUS items";
+
+    my $mstore = $self->{master_store};
+    my $rstore = $self->{replica_store};
+    my %exp;
+    # With conversations, modseqs are per-user
+    my %ms = ( user => 4, inbox => 4 );
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($mstore->get_client()->capability()->{xconversations});
+    $self->assert($rstore->get_client()->capability()->{xconversations});
+
+    xlog "Check the STATUS response, initially empty inbox";
+    $self->check_status('inbox',
+		messages => 0,
+		unseen => 0,
+		highestmodseq => $ms{inbox},
+		xconvexists => 0,
+		xconvunseen => 0,
+		xconvmodseq => 0,
+	    );
+
+    xlog "Create a 2nd folder";
+    $mstore->get_client()->create('inbox.sub') || die "Cannot create inbox.sub: $@";
+    $ms{inboxsub} = ++$ms{user};
+
+    xlog "Check the STATUS response, initially empty inbox.sub";
+    $self->check_status('inbox.sub',
+		messages => 0,
+		unseen => 0,
+		highestmodseq => $ms{inboxsub},
+		xconvexists => 0,
+		xconvunseen => 0,
+		xconvmodseq => 0,
+	    );
+
+    xlog "Add 1st message";
+    $exp{A} = $self->make_message("Message A");
+    $ms{conv1} = $ms{inbox} = ++$ms{user};
+
+    xlog "Check the STATUS response";
+    $self->check_status('inbox',
+		messages => 1,
+		unseen => 1,
+		highestmodseq => $ms{inbox},
+		xconvexists => 1,
+		xconvunseen => 1,
+		xconvmodseq => $ms{conv1},
+	    );
+
+    xlog "Mark the message read";
+    $mstore->get_client()->store('1', '+flags', '(\\Seen)');
+    $ms{inbox} = $ms{conv1} = ++$ms{user};
+
+    xlog "Check the STATUS response";
+    $self->check_status('inbox',
+		messages => 1,
+		unseen => 0,
+		highestmodseq => $ms{inbox},
+		xconvexists => 1,
+		xconvunseen => 0,
+		xconvmodseq => $ms{conv1},
+	    );
+
+    xlog "Add 2nd message";
+    $exp{B} = $self->make_message("Message B");
+    $self->assert_str_not_equals($exp{A}->make_cid(), $exp{B}->make_cid());
+    $ms{inbox} = $ms{conv2} = ++$ms{user};
+
+    xlog "Check the STATUS response";
+    $self->check_status('inbox',
+		messages => 2,
+		unseen => 1,
+		highestmodseq => $ms{inbox},
+		xconvexists => 2,
+		xconvunseen => 1,
+		xconvmodseq => max($ms{conv1}, $ms{conv2}),
+	    );
+
+    xlog "Add 3rd message, in the 1st conversation";
+    $exp{C} = $self->make_message("Message C",
+				  references => $exp{A}->get_header('message-id'));
+    $ms{inbox} = $ms{conv1} = ++$ms{user};
+
+    xlog "Check the STATUS response";
+    $self->check_status('inbox',
+		messages => 3,
+		unseen => 2,
+		highestmodseq => $ms{inbox},
+		xconvexists => 2,
+		xconvunseen => 2,
+		xconvmodseq => max($ms{conv1}, $ms{conv2}),
+	    );
+
+    xlog "Double check the STATUS for inbox.sub";
+    $self->check_status('inbox.sub',
+		messages => 0,
+		unseen => 0,
+		highestmodseq => $ms{inboxsub},
+		xconvexists => 0,
+		xconvunseen => 0,
+		xconvmodseq => 0,
+	    );
+
+    xlog "Add a message to inbox.sub, in the 1st conversation";
+    $self->{store}->set_folder('inbox.sub');
+    $self->{gen}->set_next_uid(1);
+    $exp{D} = $self->make_message("Message D",
+				  references => $exp{A}->get_header('message-id'));
+    $ms{inboxsub} = $ms{conv1} = ++$ms{user};
+
+    xlog "Check the STATUS response for inbox";
+    $self->check_status('inbox',
+		messages => 3,
+		unseen => 2,
+		highestmodseq => $ms{inbox},
+		xconvexists => 2,
+		xconvunseen => 2,
+		xconvmodseq => max($ms{conv1}, $ms{conv2}),
+	    );
+    xlog "Check the STATUS response for inbox.sub";
+    $self->check_status('inbox.sub',
+		messages => 1,
+		unseen => 1,
+		highestmodseq => $ms{inboxsub},
+		xconvexists => 1,
+		xconvunseen => 1,
+		xconvmodseq => $ms{conv1},
+	    );
+
+    xlog "Mark all messages in inbox read";
+    $self->{store}->set_folder('inbox');
+    $self->{store}->_select();
+    $mstore->get_client()->store('1:*', '+flags', '(\\Seen)');
     $ms{inbox} = $ms{conv1} = $ms{conv2} = ++$ms{user};
 
     xlog "Check the STATUS response for inbox";
