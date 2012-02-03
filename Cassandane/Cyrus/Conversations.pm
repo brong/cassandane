@@ -445,6 +445,20 @@ sub max
     return $max;
 }
 
+sub check_status
+{
+    my ($self, $folder, %expected) = @_;
+
+    my @stores = ($self->{store});
+
+    foreach my $store (@stores)
+    {
+	next if !defined $store;
+	my $status = $store->get_client()->status($folder, [keys %expected]);
+	$self->assert_deep_equals(\%expected, $status);
+    }
+}
+
 sub test_status
 {
     my ($self) = @_;
@@ -452,7 +466,6 @@ sub test_status
     xlog "Testing extended STATUS items";
 
     my $talk = $self->{store}->get_client();
-    my $items = [ qw(messages unseen highestmodseq xconvexists xconvunseen xconvmodseq) ];
     my %exp;
     # With conversations, modseqs are per-user
     my %ms = ( user => 4, inbox => 4 );
@@ -461,61 +474,56 @@ sub test_status
     $self->assert($talk->capability()->{xconversations});
 
     xlog "Check the STATUS response, initially empty inbox";
-    my $status = $talk->status('inbox', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox',
 		messages => 0,
 		unseen => 0,
 		highestmodseq => $ms{inbox},
 		xconvexists => 0,
 		xconvunseen => 0,
 		xconvmodseq => 0,
-	    }, $status);
+	    );
 
     xlog "Create a 2nd folder";
     $talk->create('inbox.sub') || die "Cannot create inbox.sub: $@";
     $ms{inboxsub} = ++$ms{user};
 
     xlog "Check the STATUS response, initially empty inbox.sub";
-    $status = $talk->status('inbox.sub', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox.sub',
 		messages => 0,
 		unseen => 0,
 		highestmodseq => $ms{inboxsub},
 		xconvexists => 0,
 		xconvunseen => 0,
 		xconvmodseq => 0,
-	    }, $status);
-
+	    );
 
     xlog "Add 1st message";
     $exp{A} = $self->make_message("Message A");
     $ms{conv1} = $ms{inbox} = ++$ms{user};
 
     xlog "Check the STATUS response";
-    $status = $talk->status('inbox', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox',
 		messages => 1,
 		unseen => 1,
 		highestmodseq => $ms{inbox},
 		xconvexists => 1,
 		xconvunseen => 1,
 		xconvmodseq => $ms{conv1},
-	    }, $status);
+	    );
 
     xlog "Mark the message read";
     $talk->store('1', '+flags', '(\\Seen)');
     $ms{inbox} = $ms{conv1} = ++$ms{user};
 
     xlog "Check the STATUS response";
-    $status = $talk->status('inbox', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox',
 		messages => 1,
 		unseen => 0,
 		highestmodseq => $ms{inbox},
 		xconvexists => 1,
 		xconvunseen => 0,
 		xconvmodseq => $ms{conv1},
-	    }, $status);
+	    );
 
     xlog "Add 2nd message";
     $exp{B} = $self->make_message("Message B");
@@ -523,15 +531,14 @@ sub test_status
     $ms{inbox} = $ms{conv2} = ++$ms{user};
 
     xlog "Check the STATUS response";
-    $status = $talk->status('inbox', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox',
 		messages => 2,
 		unseen => 1,
 		highestmodseq => $ms{inbox},
 		xconvexists => 2,
 		xconvunseen => 1,
 		xconvmodseq => max($ms{conv1}, $ms{conv2}),
-	    }, $status);
+	    );
 
     xlog "Add 3rd message, in the 1st conversation";
     $exp{C} = $self->make_message("Message C",
@@ -539,26 +546,24 @@ sub test_status
     $ms{inbox} = $ms{conv1} = ++$ms{user};
 
     xlog "Check the STATUS response";
-    $status = $talk->status('inbox', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox',
 		messages => 3,
 		unseen => 2,
 		highestmodseq => $ms{inbox},
 		xconvexists => 2,
 		xconvunseen => 2,
 		xconvmodseq => max($ms{conv1}, $ms{conv2}),
-	    }, $status);
+	    );
 
     xlog "Double check the STATUS for inbox.sub";
-    $status = $talk->status('inbox.sub', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox.sub',
 		messages => 0,
 		unseen => 0,
 		highestmodseq => $ms{inboxsub},
 		xconvexists => 0,
 		xconvunseen => 0,
 		xconvmodseq => 0,
-	    }, $status);
+	    );
 
     xlog "Add a message to inbox.sub, in the 1st conversation";
     $self->{store}->set_folder('inbox.sub');
@@ -568,25 +573,23 @@ sub test_status
     $ms{inboxsub} = $ms{conv1} = ++$ms{user};
 
     xlog "Check the STATUS response for inbox";
-    $status = $talk->status('inbox', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox',
 		messages => 3,
 		unseen => 2,
 		highestmodseq => $ms{inbox},
 		xconvexists => 2,
 		xconvunseen => 2,
 		xconvmodseq => max($ms{conv1}, $ms{conv2}),
-	    }, $status);
+	    );
     xlog "Check the STATUS response for inbox.sub";
-    $status = $talk->status('inbox.sub', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox.sub',
 		messages => 1,
 		unseen => 1,
 		highestmodseq => $ms{inboxsub},
 		xconvexists => 1,
 		xconvunseen => 1,
 		xconvmodseq => $ms{conv1},
-	    }, $status);
+	    );
 
     xlog "Mark all messages in inbox read";
     $self->{store}->set_folder('inbox');
@@ -595,26 +598,24 @@ sub test_status
     $ms{inbox} = $ms{conv1} = $ms{conv2} = ++$ms{user};
 
     xlog "Check the STATUS response for inbox";
-    $status = $talk->status('inbox', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox',
 		messages => 3,
 		unseen => 0,
 		highestmodseq => $ms{inbox},
 		xconvexists => 2,
 		xconvunseen => 1,
 		xconvmodseq => max($ms{conv1}, $ms{conv2}),
-	    }, $status);
+	    );
     xlog "Check the STATUS response for inbox.sub";
-    $status = $talk->status('inbox.sub', $items);
-    $self->assert_deep_equals({
+    $self->check_status('inbox.sub',
 		messages => 1,
 		unseen => 1,
 		highestmodseq => $ms{inboxsub},
 		xconvexists => 1,
 		xconvunseen => 1,
 		xconvmodseq => $ms{conv2},
-	    }, $status);
-
+	    );
 }
+
 
 1;
