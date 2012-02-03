@@ -449,17 +449,17 @@ sub check_status
 {
     my ($self, $folder, %expected) = @_;
 
-    my @stores = ($self->{store});
+    my @stores = ('store');
     if (defined $self->{replica_store})
     {
 	$self->run_replication();
-	push(@stores, $self->{replica_store});
+	push(@stores, 'replica_store');
     }
 
-    foreach my $store (@stores)
+    foreach my $sname (@stores)
     {
-	next if !defined $store;
-	my $status = $store->get_client()->status($folder, [keys %expected]);
+	xlog "checking STATUS, folder:$folder store:$sname";
+	my $status = $self->{$sname}->get_client()->status($folder, [keys %expected]);
 	$self->assert_deep_equals(\%expected, $status);
     }
 }
