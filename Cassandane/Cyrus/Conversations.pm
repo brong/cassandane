@@ -782,5 +782,70 @@ sub test_status_replication
 	    );
 }
 
+sub test_status_replication_expunged_msg
+{
+    my ($self) = @_;
+
+    xlog "Test replication of an xconvmodseq STATUS item";
+    xlog "when the xconvmodseq is ahead of all current messages";
+    xlog "due to the most recent message being deleted and";
+    xlog "expunged [IRIS-1182]";
+
+    my $mstore = $self->{master_store};
+    my $rstore = $self->{replica_store};
+    my %exp;
+    # With conversations, modseqs are per-user
+    my %ms = ( user => 4, inbox => 4 );
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($mstore->get_client()->capability()->{xconversations});
+    $self->assert($rstore->get_client()->capability()->{xconversations});
+
+    xlog "Check the STATUS response, initially empty inbox";
+    $self->check_status('inbox',
+		messages => 0,
+		unseen => 0,
+		highestmodseq => $ms{inbox},
+		xconvexists => 0,
+		xconvunseen => 0,
+		xconvmodseq => 0,
+	    );
+
+    xlog "Add 3 messages in one conversation";
+    $exp{A} = $self->make_message("Message A");
+    $exp{B} = $self->make_message("Message B", references => [ $exp{A} ]);
+    $exp{C} = $self->make_message("Message C", references => [ $exp{B} ]);
+    $ms{conv1} = $ms{inbox} = ($ms{user} += 3);
+
+    xlog "Check the STATUS response";
+    $self->check_status('inbox',
+		messages => 3,
+		unseen => 3,
+		highestmodseq => $ms{inbox},
+		xconvexists => 1,
+		xconvunseen => 1,
+		xconvmodseq => $ms{conv1},
+	    );
+
+    xlog "Add one more message to the conversation";
+    $exp{D} = $self->make_message("Message D", references => [ $exp{C} ]);
+    xlog "Delete and expunge the message again";
+    $mstore->get_client()->store(4, '+flags', '(\\Deleted)');
+    $mstore->get_client()->expunge();
+    # Do a delayed expunge run to force the mailbox to repack
+    $self->run_delayed_expunge();
+    $ms{inbox} = $ms{conv1} = ($ms{user} += 3);
+
+    xlog "Check the STATUS response";
+    $self->check_status('inbox',
+		messages => 3,
+		unseen => 3,
+		highestmodseq => $ms{inbox},
+		xconvexists => 1,
+		xconvunseen => 1,
+		xconvmodseq => $ms{conv1},
+	    );
+}
+
 
 1;
