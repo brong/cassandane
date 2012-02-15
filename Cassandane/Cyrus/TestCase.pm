@@ -477,7 +477,11 @@ sub run_replication
 
 sub run_delayed_expunge
 {
-    my ($self) = @_;
+    my ($self, %params) = @_;
+    my $instance = delete $params{instance} || $self->{instance};
+
+    die "Unknown parameters: " . join(' ', keys %params)
+	if scalar %params;
 
     xlog "Performing delayed expunge";
 
@@ -486,7 +490,7 @@ sub run_delayed_expunge
     my @cmd = ( 'cyr_expire', '-E', '1', '-X', '0', '-D', '0' );
     push(@cmd, '-v')
 	if get_verbose;
-    $self->{instance}->run_command({ cyrus => 1 }, @cmd);
+    $instance->run_command({ cyrus => 1 }, @cmd);
 
     $self->_reconnect_all();
 }
