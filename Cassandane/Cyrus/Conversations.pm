@@ -44,11 +44,13 @@ use strict;
 use warnings;
 use DateTime;
 use URI::Escape;
+use File::stat;
 
 use lib '.';
 use base qw(Cassandane::Cyrus::TestCase);
 use Cassandane::ThreadedGenerator;
 use Cassandane::Util::Log;
+use Cassandane::DBTool;
 use Cassandane::Util::DateTime qw(to_iso8601 from_iso8601
 				  from_rfc822
 				  to_rfc3501 from_rfc3501);
@@ -1153,6 +1155,180 @@ sub test_status_replication_expunged_msg_b
 		xconvunseen => 1,
 		xconvmodseq => $ms{conv1},
 	    );
+}
+
+sub run_conversations_audit
+{
+    my ($self, $user) = @_;
+    $user ||= 'cassandane';
+
+    xlog "Set the conversations db mtime backwards";
+    my $conv_db = $self->{instance}->{basedir} . "/conf/user/c/cassandane.conversations";
+    my $st = stat($conv_db)
+	or die "Cannot stat $conv_db: $!";
+    my $mtime = $st->mtime - 10;
+    my $size = $st->size;
+
+    utime($mtime, $mtime, $conv_db)
+	or die "Cannot set mtime back into the past on $conv_db: $!";
+    $st = stat($conv_db)
+	or die "Cannot stat $conv_db: $!";
+    $self->assert_num_equals($mtime, $st->mtime);
+    $self->assert_num_equals($size, $st->size);
+    $self->assert_num_equals($mtime, $st->atime);
+
+
+    xlog "Run the conversations audit command";
+    my $outfile = $self->{instance}->{basedir} . "/audit.out";
+    unlink($outfile);
+    $self->{instance}->run_command({
+		cyrus => 1,
+		redirects => {
+		    stdout => $outfile,
+		},
+	    }, 'ctl_conversationsdb', '-v', '-A', $user);
+    open OUTPUT, '<', $outfile
+	or die "Cannot open $outfile for reading: $!";
+    my @output = readline(OUTPUT);
+    my $output = join('', @output);
+    close OUTPUT;
+
+    foreach my $s (@output) { chomp $s; xlog "output: $s"; }
+
+    xlog "Check the conversations db is undamaged by the audit";
+    $st = stat($conv_db)
+	or die "Cannot stat $conv_db: $!";
+    $self->assert_num_equals($mtime, $st->mtime, "Conversations DB has not been written");
+    $self->assert_num_equals($size, $st->size, "Conversations DB is the same size");
+    $self->assert_num_not_equals($mtime, $st->atime, "Conversations DB has been read");
+
+    xlog "Check that audit did actually check the database";
+    $self->assert($output =~ m/^Inbox user.$user$/m);
+    $self->assert($output =~ m/^Pass 1:/m);
+    $self->assert($output =~ m/^Pass 2:/m);
+
+    return $output;
+}
+
+sub config_db_audit
+{
+    my ($self, $conf) = @_;
+    xlog "Setting conversations_db = twoskip";
+    $conf->set(conversations_db => 'twoskip');
+}
+
+
+sub test_db_audit
+{
+    my ($self) = @_;
+
+    xlog "Testing ctl_conversationsdb -A";
+
+    my $store = $self->{store};
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($store->get_client()->capability()->{xconversations});
+
+    xlog "generating messages";
+    my $generator = Cassandane::ThreadedGenerator->new(nthreads => 10, nmessages => 35);
+    $store->write_begin();
+    my %Bkeys;
+    while (my $msg = $generator->generate())
+    {
+	$Bkeys{"B" . $msg->cid()} = 1;
+	$store->write_message($msg);
+    }
+    $store->write_end();
+    $self->assert(scalar keys %Bkeys > 5);
+
+    # Don't need an IMAP connection anymore, everything from
+    # here on works directly on backend databases.
+    $store->disconnect();
+    $store = undef;
+
+    my $dbtool = new Cassandane::DBTool($self->{instance},
+					'conf/user/c/cassandane.conversations',
+					'twoskip');
+
+    my $output = $self->run_conversations_audit();
+
+    xlog "Check that audit did not report any differences";
+    $self->assert_does_not_match(qr/^RECORDS differ/m, $output);
+    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
+    $self->assert_matches(qr/is OK$/m, $output);
+    $self->assert_does_not_match(qr/is BROKEN/m, $output);
+    $self->assert_does_not_match(qr/^ADDED /m, $output);
+    $self->assert_does_not_match(qr/^MISSING /m, $output);
+    $self->assert_does_not_match(qr/^CHANGED /m, $output);
+
+    my ($key_to_change, $key_to_delete, $key_to_add, @junk) = keys %Bkeys;
+    # Make $key_to_add a different key from all the others
+    my $n = 1;
+    while (defined $Bkeys{$key_to_add})
+    {
+	substr($key_to_add, $n, 1, 'a');
+	$n++;
+    }
+
+    xlog "Damage the DB by changing a record";
+    my $data = $dbtool->get($key_to_change);
+    chomp $data;
+    $dbtool->set($key_to_change, "XX" . $data . "YY");
+
+    $output = $self->run_conversations_audit();
+
+    xlog "Check that audit reported the correct differences";
+    $self->assert_matches(qr/^RECORDS differ/m, $output);
+    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
+    $self->assert_does_not_match(qr/is OK$/m, $output);
+    $self->assert_matches(qr/is BROKEN \(1 differences\)$/m, $output);
+    $self->assert_does_not_match(qr/^ADDED /m, $output);
+    $self->assert_does_not_match(qr/^MISSING /m, $output);
+    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m,
+    $output);
+
+    xlog "Damage the DB by deleting a record";
+    $dbtool->delete($key_to_delete);
+
+    $output = $self->run_conversations_audit();
+
+    xlog "Check that audit reported the correct differences";
+    $self->assert_matches(qr/^RECORDS differ/m, $output);
+    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
+    $self->assert_does_not_match(qr/is OK$/m, $output);
+    $self->assert_matches(qr/is BROKEN \(2 differences\)$/m, $output);
+    $self->assert_does_not_match(qr/^ADDED /m, $output);
+    $self->assert_matches(qr/^MISSING key \"$key_to_delete\"/m, $output);
+    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
+
+    xlog "Damage the DB by adding a record";
+    $dbtool->set($key_to_add, 'This data is utterly bogus');
+
+    $output = $self->run_conversations_audit();
+
+    xlog "Check that audit reported the correct differences";
+    $self->assert_matches(qr/^RECORDS differ/m, $output);
+    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
+    $self->assert_does_not_match(qr/is OK$/m, $output);
+    $self->assert_matches(qr/is BROKEN \(3 differences\)$/m, $output);
+    $self->assert_matches(qr/^ADDED key \"$key_to_add\"/m, $output);
+    $self->assert_matches(qr/^MISSING key \"$key_to_delete\"/m, $output);
+    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
+
+    xlog "Damage the DB by trashing \$FOLDER_NAMES";
+    $dbtool->set('$FOLDER_NAMES', '()');
+
+    $output = $self->run_conversations_audit();
+
+    xlog "Check that audit reported the correct differences";
+    $self->assert_matches(qr/^RECORDS differ/m, $output);
+    $self->assert_matches(qr/^FOLDER_NAMES differ/m, $output);
+    $self->assert_matches(qr/^MISSING \"user.cassandane\" at 0/m, $output);
+    $self->assert_does_not_match(qr/is OK$/m, $output);
+    $self->assert_matches(qr/is BROKEN \(4 differences\)$/m, $output);
+    $self->assert_matches(qr/^ADDED key \"$key_to_add\"/m, $output);
+    $self->assert_matches(qr/^MISSING key \"$key_to_delete\"/m, $output);
+    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
 }
 
 1;
