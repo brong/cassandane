@@ -1090,4 +1090,71 @@ sub test_db_audit
     $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
 }
 
+sub config_db_audit_rename
+{
+    my ($self, $conf) = @_;
+    xlog "Setting conversations_db = twoskip";
+    $conf->set(conversations_db => 'twoskip');
+}
+
+sub test_db_audit_rename
+{
+    my ($self) = @_;
+
+    xlog "Testing ctl_conversationsdb -A vs folder rename";
+
+    my $store = $self->{store};
+    # test data from hipsteripsum.me
+    my $folderA = 'INBOX.hella';
+    my $folderB = 'INBOX.flexitarian';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($store->get_client()->capability()->{xconversations});
+
+    xlog "creating subfolder";
+    $store->get_client()->create($folderA)
+	or die "Cannot create $folderA: $@";
+    $store->set_folder($folderA);
+
+    xlog "generating messages";
+    my $generator = Cassandane::ThreadedGenerator->new(nthreads => 10, nmessages => 35);
+    $store->write_begin();
+    while (my $msg = $generator->generate())
+    {
+	$store->write_message($msg);
+    }
+    $store->write_end();
+
+    # Disconnect while auditing the database, just in case
+    $store->disconnect();
+
+    my $output = $self->run_conversations_audit();
+
+    xlog "Check that audit did not report any differences";
+    $self->assert_does_not_match(qr/^RECORDS differ/m, $output);
+    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
+    $self->assert_matches(qr/is OK$/m, $output);
+    $self->assert_does_not_match(qr/is BROKEN/m, $output);
+    $self->assert_does_not_match(qr/^ADDED /m, $output);
+    $self->assert_does_not_match(qr/^MISSING /m, $output);
+    $self->assert_does_not_match(qr/^CHANGED /m, $output);
+
+    xlog "rename the folder from IMAP";
+    $store->connect();
+    $store->get_client()->rename($folderA, $folderB);
+    $store->disconnect();
+
+    $output = $self->run_conversations_audit();
+
+    xlog "Check that audit did not report any differences";
+    $self->assert_does_not_match(qr/^RECORDS differ/m, $output);
+    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
+    $self->assert_matches(qr/is OK$/m, $output);
+    $self->assert_does_not_match(qr/is BROKEN/m, $output);
+    $self->assert_does_not_match(qr/^ADDED /m, $output);
+    $self->assert_does_not_match(qr/^MISSING /m, $output);
+    $self->assert_does_not_match(qr/^CHANGED /m, $output);
+}
+
+
 1;
