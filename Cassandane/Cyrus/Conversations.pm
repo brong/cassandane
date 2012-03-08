@@ -61,6 +61,7 @@ sub new
     my $config = Cassandane::Config->default()->clone();
     $config->set(conversations => 'on');
     $config->set(ctl_conversationsdb_conversations_max_thread => 5);
+    $config->set(conversations_db => 'twoskip');
     return $class->SUPER::new({ config => $config }, @args);
 }
 
@@ -1210,14 +1211,6 @@ sub run_conversations_audit
     return $output;
 }
 
-sub config_db_audit
-{
-    my ($self, $conf) = @_;
-    xlog "Setting conversations_db = twoskip";
-    $conf->set(conversations_db => 'twoskip');
-}
-
-
 sub test_db_audit
 {
     my ($self) = @_;
@@ -1329,13 +1322,6 @@ sub test_db_audit
     $self->assert_matches(qr/^ADDED key \"$key_to_add\"/m, $output);
     $self->assert_matches(qr/^MISSING key \"$key_to_delete\"/m, $output);
     $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
-}
-
-sub config_db_audit_rename
-{
-    my ($self, $conf) = @_;
-    xlog "Setting conversations_db = twoskip";
-    $conf->set(conversations_db => 'twoskip');
 }
 
 sub test_db_audit_rename
