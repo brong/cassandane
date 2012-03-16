@@ -324,4 +324,49 @@ sub test_duplicate_suppression_on_uniqueid_badmbox
     $self->check_messages(\%msgs, check_guid => 0, keyed_on => 'uid');
 }
 
+sub config_duplicate_suppression_x_me_message_id
+{
+    my ($self, $conf) = @_;
+    xlog "Setting duplicatesuppression";
+    $conf->set(duplicatesuppression => 1);
+}
+
+sub test_duplicate_suppression_x_me_message_id
+{
+    my ($self) = @_;
+
+    xlog "Testing behaviour of duplicate suppression when";
+    xlog "the message contains an X-ME-Message-ID header.";
+    xlog "We expect the presence of the X-ME-Message-ID to";
+    xlog "completely override the Message-ID header";
+
+    xlog "Deliver a message";
+    my $msgA = $self->{gen}->generate(subject => "Message 1");
+    $msgA->add_header('X-ME-Message-ID', '<fake1723@fastmail.fm>');
+    $self->{instance}->deliver($msgA);
+
+    xlog "Check that the message made it";
+    $self->check_messages({ 1 => $msgA }, check_guid => 0, keyed_on => 'uid');
+
+    xlog "Try to deliver a message with a different Message-ID";
+    xlog "but the same X-ME-Message-ID";
+    my $msgB = $msgA->clone();
+    $msgB->set_headers('Message-ID', '<something.else@fastmail.fm>');
+    $self->{instance}->deliver($msgB);
+
+    xlog "Check that second copy of the message didn't make it";
+    $self->check_messages({ 1 => $msgA }, check_guid => 0, keyed_on => 'uid');
+
+    xlog "Try to deliver a message with the same Message-ID";
+    xlog "but different X-ME-Message-ID";
+    my $msgC = $msgA->clone();
+    $msgC->set_attribute(uid => 2);
+    $msgC->set_headers('X-ME-Message-ID', '<another.thing.else@fastmail.fm>');
+    $self->{instance}->deliver($msgC);
+
+    xlog "Check that second copy of the message did make it";
+    $self->check_messages({ 1 => $msgA, 2 => $msgC },
+			  check_guid => 0, keyed_on => 'uid');
+}
+
 1;
