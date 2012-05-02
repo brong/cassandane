@@ -791,7 +791,7 @@ sub check_messages
 	while (my $msg = $store->read_message())
 	{
 	    my $key = $msg->$keyed_on();
-	    $self->assert(!defined $actual->{$key});
+	    $self->assert_null($actual->{$key});
 	    $actual->{$key} = $msg;
 	}
 	$store->read_end();

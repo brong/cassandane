@@ -100,34 +100,187 @@ sub choose_cid
 #
 # Test APPEND of messages to IMAP
 #
-sub test_append
+sub test_append_unrelated
     :min_version_3_0
 {
     my ($self) = @_;
     my %exp;
+
+    xlog "Test APPEND of unrelated messages to IMAP, which form";
+    xlog "singleton conversations.";
 
     # check IMAP server has the XCONVERSATIONS capability
     $self->assert($self->{store}->get_client()->capability()->{xconversations});
 
     xlog "generating message A";
     $exp{A} = $self->make_message("Message A");
-    $exp{A}->set_attributes(uid => 1, cid => $exp{A}->make_cid());
+    $exp{A}->set_attributes(cid => $exp{A}->make_cid());
     $self->check_messages(\%exp);
 
     xlog "generating message B";
     $exp{B} = $self->make_message("Message B");
-    $exp{B}->set_attributes(uid => 2, cid => $exp{B}->make_cid());
+    $exp{B}->set_attributes(cid => $exp{B}->make_cid());
     $self->check_messages(\%exp);
 
     xlog "generating message C";
     $exp{C} = $self->make_message("Message C");
-    $exp{C}->set_attributes(uid => 3, cid => $exp{C}->make_cid());
+    $exp{C}->set_attributes(cid => $exp{C}->make_cid());
     my $actual = $self->check_messages(\%exp);
 
     xlog "generating message D";
     $exp{D} = $self->make_message("Message D");
-    $exp{D}->set_attributes(uid => 4, cid => $exp{D}->make_cid());
+    $exp{D}->set_attributes(cid => $exp{D}->make_cid());
     $self->check_messages(\%exp);
+
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{D}->cid());
+    $self->assert_str_not_equals($exp{B}->cid(), $exp{C}->cid());
+    $self->assert_str_not_equals($exp{B}->cid(), $exp{D}->cid());
+    $self->assert_str_not_equals($exp{C}->cid(), $exp{D}->cid());
+}
+
+sub test_append_related
+{
+    my ($self) = @_;
+    my %exp;
+
+    xlog "Test APPEND of messages related by both message-id and";
+    xlog "subject, which form one large conversation.";
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($self->{store}->get_client()->capability()->{xconversations});
+
+    xlog "generating message A";
+    $exp{A} = $self->make_message("Message A");
+    $exp{A}->set_attributes(cid => $exp{A}->make_cid());
+    $self->check_messages(\%exp);
+
+    xlog "generating message B";
+    $exp{B} = $self->make_message("Re: Message A",
+				  references => [ $exp{A} ]);
+    $exp{B}->set_attributes(cid => $exp{A}->cid());
+    $self->check_messages(\%exp);
+
+    xlog "generating message C";
+    $exp{C} = $self->make_message("RE: Message A",
+				  references => [ $exp{A} ]);
+    $exp{C}->set_attributes(cid => $exp{A}->cid());
+    my $actual = $self->check_messages(\%exp);
+
+    xlog "generating message D";
+    $exp{D} = $self->make_message("Re: Re: Message A",
+				  references => [ $exp{C} ]);
+    $exp{D}->set_attributes(cid => $exp{C}->cid());
+    $self->check_messages(\%exp);
+
+    $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{D}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{D}->cid());
+    $self->assert_str_equals($exp{C}->cid(), $exp{D}->cid());
+}
+
+
+sub test_append_subject
+{
+    my ($self) = @_;
+    my %exp;
+
+    xlog "Test APPEND of messages related by message-id but";
+    xlog "with different subject, which form two conversations.";
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($self->{store}->get_client()->capability()->{xconversations});
+
+    xlog "generating message A";
+    $exp{A} = $self->make_message("Message A");
+    $exp{A}->set_attributes(cid => $exp{A}->make_cid());
+    $self->check_messages(\%exp);
+
+    xlog "generating message B";
+    $exp{B} = $self->make_message("Re: Message A",
+				  references => [ $exp{A} ]);
+    $exp{B}->set_attributes(cid => $exp{A}->cid());
+    $self->check_messages(\%exp);
+
+    xlog "generating message C";
+    $exp{C} = $self->make_message("I like to change subjects",
+				  references => [ $exp{A} ]);
+    $exp{C}->set_attributes(cid => $exp{C}->make_cid());
+    my $actual = $self->check_messages(\%exp);
+
+    xlog "generating message D";
+    $exp{D} = $self->make_message("Re: I like to change subjects",
+				  references => [ $exp{C} ]);
+    $exp{D}->set_attributes(cid => $exp{C}->cid());
+    $self->check_messages(\%exp);
+
+    $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{D}->cid());
+    $self->assert_str_not_equals($exp{B}->cid(), $exp{C}->cid());
+    $self->assert_str_not_equals($exp{B}->cid(), $exp{D}->cid());
+    $self->assert_str_equals($exp{C}->cid(), $exp{D}->cid());
+}
+
+sub test_subject_variability
+{
+    my ($self) = @_;
+    my %exp;
+
+    xlog "Test APPEND of messages related by message-id but";
+    xlog "with subjects differing in various ways, to see which";
+    xlog "of those differences forms a new conversation.";
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($self->{store}->get_client()->capability()->{xconversations});
+
+    xlog "generating message A";
+    my $id = 1;
+    $exp{$id} = $self->make_message("Message A");
+    $exp{$id}->set_attributes(cid => $exp{1}->make_cid());
+    $self->check_messages(\%exp);
+
+    my @cases = (
+	{ subject => "Message A", same_cid => 1 },
+	{ subject => "Re: Message A", same_cid => 1 },
+	{ subject => "Re: Re: Message A", same_cid => 1 },
+	{ subject => "RE: SV: Re: Sv: Message A", same_cid => 1 },
+	{ subject => "Fwd: RE: Re: Sv: Message A", same_cid => 1 },
+	{ subject => "Message   A", same_cid => 1 },
+	{ subject => " Message   A", same_cid => 1 },
+	{ subject => " Message \t A", same_cid => 1 },
+	{ subject => "MessageA", same_cid => 1 },
+	{ subject => "Message a", same_cid => 0 },
+	{ subject => "message A", same_cid => 0 },
+	{ subject => "[BLOB] Message A", same_cid => 1 },
+	{ subject => "[blobby Blob blob] Message A", same_cid => 1 },
+	{ subject => "  [blobby Blob blob] Message A", same_cid => 1 },
+	{ subject => "  [blobby Blob blob]\tMessage A", same_cid => 1 },
+	{ subject => "  [blobby Blob blob]Message A", same_cid => 1 },
+	{ subject => "Message A [trailing blob]", same_cid => 0 },
+	{ subject => "Message [interpolated blob] A", same_cid => 0 },
+	{ subject => "Message A (fwd)", same_cid => 0 },    # sigh
+    );
+
+    foreach my $case (@cases)
+    {
+	xlog "generating message for subject \"" . $case->{subject} . "\"";
+	$id++;
+	$exp{$id} = $self->make_message($case->{subject}, references => [ $exp{1} ]);
+	if ($case->{same_cid})
+	{
+	    $exp{$id}->set_attribute(cid => $exp{1}->cid());
+	}
+	else
+	{
+	    $exp{$id}->set_attribute(cid => $exp{$id}->make_cid());
+	    $self->assert_str_not_equals($exp{1}->cid(), $exp{$id}->cid());
+	}
+	$self->check_messages(\%exp, keyed_on => 'uid');
+    }
 }
 
 #
@@ -364,31 +517,30 @@ sub bogus_test_append_clash
 
     xlog "generating message A";
     $exp{A} = $self->make_message("Message A");
-    $exp{A}->set_attributes(uid => 1, cid => $exp{A}->make_cid());
+    $exp{A}->set_attributes(cid => $exp{A}->make_cid());
     $self->check_messages(\%exp);
 
     xlog "generating message B";
-    $exp{B} = $self->make_message("Message B");
-    $exp{B}->set_attributes(uid => 2, cid => $exp{B}->make_cid());
+    $exp{B} = $self->make_message("Re: Message A");
+    $exp{B}->set_attributes(cid => $exp{B}->make_cid());
     my $actual = $self->check_messages(\%exp);
 
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{B}->cid());
+
     xlog "generating message C";
-    my $ElCid = choose_cid($exp{A}->get_attribute('cid'),
-			   $exp{B}->get_attribute('cid'));
-    $exp{C} = $self->make_message("Message C",
+    $exp{C} = $self->make_message("Re: Re: Message A",
 				  references => [ $exp{A}, $exp{B} ],
 				 );
-    $exp{C}->set_attributes(uid => 3, cid => $ElCid);
-
-    foreach my $s (qw(A B))
-    {
-	if ($actual->{"Message $s"}->make_cid() ne $ElCid)
-	{
-	    $exp{$s}->set_attributes(cid => $ElCid);
-	}
-    }
+    my $ElCid = choose_cid($exp{A}->cid(), $exp{B}->cid());
+    $exp{A}->set_attributes(cid => $ElCid);
+    $exp{B}->set_attributes(cid => $ElCid);
+    $exp{C}->set_attributes(cid => $ElCid);
 
     $self->check_messages(\%exp);
+
+    $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{C}->cid());
 }
 
 #
@@ -405,37 +557,41 @@ sub bogus_test_double_clash
 
     xlog "generating message A";
     $exp{A} = $self->make_message("Message A");
-    $exp{A}->set_attributes(uid => 1, cid => $exp{A}->make_cid());
+    $exp{A}->set_attributes(cid => $exp{A}->make_cid());
     $self->check_messages(\%exp);
 
     xlog "generating message B";
-    $exp{B} = $self->make_message("Message B");
-    $exp{B}->set_attributes(uid => 2, cid => $exp{B}->make_cid());
+    $exp{B} = $self->make_message("Re: Message A");
+    $exp{B}->set_attributes(cid => $exp{B}->make_cid());
     $self->check_messages(\%exp);
 
     xlog "generating message C";
-    $exp{C} = $self->make_message("Message C");
-    $exp{C}->set_attributes(uid => 3, cid => $exp{C}->make_cid());
+    $exp{C} = $self->make_message("Re: Re: Message A");
+    $exp{C}->set_attributes(cid => $exp{C}->make_cid());
     my $actual = $self->check_messages(\%exp);
 
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_not_equals($exp{B}->cid(), $exp{C}->cid());
+
     xlog "generating message D";
-    my $ElCid = choose_cid($exp{A}->get_attribute('cid'),
-			   $exp{B}->get_attribute('cid'),
-			   $exp{C}->get_attribute('cid'));
-    $exp{D} = $self->make_message("Message D",
+    $exp{D} = $self->make_message("Re: Re: Re: Message A",
 				  references => [ $exp{A}, $exp{B}, $exp{C} ],
 				 );
-    $exp{D}->set_attributes(uid => 4, cid => $ElCid);
-
-    foreach my $s (qw(A B C))
-    {
-	if ($actual->{"Message $s"}->make_cid() ne $ElCid)
-	{
-	    $exp{$s}->set_attributes(cid => $ElCid);
-	}
-    }
+    my $ElCid = choose_cid($exp{A}->cid(), $exp{B}->cid(), $exp{C}->cid());
+    $exp{A}->set_attributes(cid => $ElCid);
+    $exp{B}->set_attributes(cid => $ElCid);
+    $exp{C}->set_attributes(cid => $ElCid);
+    $exp{D}->set_attributes(cid => $ElCid);
 
     $self->check_messages(\%exp);
+
+    $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{D}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{D}->cid());
+    $self->assert_str_equals($exp{C}->cid(), $exp{D}->cid());
 }
 
 #
@@ -473,7 +629,7 @@ sub bogus_test_replication_clash
     $self->check_messages(\%exp, store => $replica_store);
 
     xlog "generating message B";
-    $exp{B} = $self->make_message("Message B", store => $master_store);
+    $exp{B} = $self->make_message("Re: Message A", store => $master_store);
     $exp{B}->set_attributes(cid => $exp{B}->make_cid());
     $self->run_replication();
     $self->check_replication('cassandane');
@@ -481,30 +637,27 @@ sub bogus_test_replication_clash
     $self->check_messages(\%exp, store => $replica_store);
 
     xlog "generating message C";
-    $exp{C} = $self->make_message("Message C", store => $master_store);
+    $exp{C} = $self->make_message("Re: Re: Message A", store => $master_store);
     $exp{C}->set_attributes(cid => $exp{C}->make_cid());
     $self->run_replication();
     $self->check_replication('cassandane');
     my $actual = $self->check_messages(\%exp, store => $master_store);
     $self->check_messages(\%exp, store => $replica_store);
 
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_not_equals($exp{B}->cid(), $exp{C}->cid());
+
     xlog "generating message D";
-    my $ElCid = choose_cid($exp{A}->get_attribute('cid'),
-			   $exp{B}->get_attribute('cid'),
-			   $exp{C}->get_attribute('cid'));
-    $exp{D} = $self->make_message("Message D",
+    $exp{D} = $self->make_message("Re: Re: Re: Message A",
 				  store => $master_store,
 				  references => [ $exp{A}, $exp{B}, $exp{C} ],
 				 );
+    my $ElCid = choose_cid($exp{A}->cid(), $exp{B}->cid(), $exp{C}->cid());
+    $exp{A}->set_attributes(cid => $ElCid);
+    $exp{B}->set_attributes(cid => $ElCid);
+    $exp{C}->set_attributes(cid => $ElCid);
     $exp{D}->set_attributes(cid => $ElCid);
-
-    foreach my $s (qw(A B C))
-    {
-	if ($actual->{"Message $s"}->make_cid() ne $ElCid)
-	{
-	    $exp{$s}->set_attributes(cid => $ElCid);
-	}
-    }
 
     $self->run_replication();
     $self->check_replication('cassandane');
@@ -514,6 +667,13 @@ sub bogus_test_replication_clash
 
     $self->check_messages(\%exp, store => $master_store);
     $self->check_messages(\%exp, store => $replica_store);
+
+    $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{D}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{D}->cid());
+    $self->assert_str_equals($exp{C}->cid(), $exp{D}->cid());
 }
 
 sub test_xconvfetch
@@ -604,25 +764,40 @@ sub bogus_test_fm_webui_draft
     xlog "generating message A";
     $exp{A} = $self->{gen}->generate(subject => 'Draft message A');
     $exp{A}->remove_headers('Message-ID');
-#     $exp{A}->add_header('X-ME-Message-ID', '<fake.header@i.am.a.draft>');
     $exp{A}->add_header('X-ME-Message-ID', '<fake1700@fastmail.fm>');
     $exp{A}->set_attribute(cid => $exp{A}->make_cid());
 
     $self->{store}->write_begin();
     $self->{store}->write_message($exp{A});
     $self->{store}->write_end();
-    $self->check_messages(\%exp);
+    $self->check_messages(\%exp, keyed_on => 'uid');
 
     xlog "generating message B";
     $exp{B} = $exp{A}->clone();
-    $exp{B}->set_headers('Subject', 'Draft message B');
+    # avoid changing the subject
     $exp{B}->set_body("Completely different text here\r\n");
     $exp{B}->set_attribute(uid => 2);
+    # clone() gave B the same cid as A
 
     $self->{store}->write_begin();
     $self->{store}->write_message($exp{B});
     $self->{store}->write_end();
-    $self->check_messages(\%exp);
+    $self->check_messages(\%exp, keyed_on => 'uid');
+
+    xlog "generating message C";
+    $exp{C} = $exp{A}->clone();
+    $exp{C}->set_headers('Subject', 'Draft message was once A');
+    $exp{C}->set_body("Even more completely different text here\r\n");
+    $exp{C}->set_attributes(uid => 3, cid => $exp{C}->make_cid());
+
+    $self->{store}->write_begin();
+    $self->{store}->write_message($exp{C});
+    $self->{store}->write_end();
+    $self->check_messages(\%exp, keyed_on => 'uid');
+
+    $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
+    $self->assert_str_not_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_not_equals($exp{B}->cid(), $exp{C}->cid());
 }
 
 #
@@ -654,7 +829,7 @@ sub bogus_test_cross_user_copy
     $exp{A} = $self->{gen}->generate(subject => 'Message A');
     my $cid = $exp{A}->make_cid();
     $exp{A}->set_attribute(cid => $cid);
-    $exp{B} = $self->{gen}->generate(subject => 'Message B',
+    $exp{B} = $self->{gen}->generate(subject => 'Re: Message A',
 				     references => [ $exp{A} ]);
     $exp{B}->set_attribute(cid => $cid);
 
@@ -790,7 +965,7 @@ sub test_status
 	    );
 
     xlog "Add 3rd message, in the 1st conversation";
-    $exp{C} = $self->make_message("Message C",
+    $exp{C} = $self->make_message("Re: Message A",
 				  references => [ $exp{A} ]);
     $ms{inbox} = $ms{conv1} = ++$ms{user};
 
@@ -817,7 +992,7 @@ sub test_status
     xlog "Add a message to inbox.sub, in the 1st conversation";
     $self->{store}->set_folder('inbox.sub');
     $self->{gen}->set_next_uid(1);
-    $exp{D} = $self->make_message("Message D",
+    $exp{D} = $self->make_message("Re: [D] Message A",
 				  references => [ $exp{A} ]);
     $ms{inboxsub} = $ms{conv1} = ++$ms{user};
 
@@ -950,7 +1125,7 @@ sub test_status_replication
 	    );
 
     xlog "Add 3rd message, in the 1st conversation";
-    $exp{C} = $self->make_message("Message C",
+    $exp{C} = $self->make_message("Re: Message A",
 				  references => [ $exp{A} ]);
     $ms{inbox} = $ms{conv1} = ++$ms{user};
 
@@ -977,7 +1152,7 @@ sub test_status_replication
     xlog "Add a message to inbox.sub, in the 1st conversation";
     $self->{store}->set_folder('inbox.sub');
     $self->{gen}->set_next_uid(1);
-    $exp{D} = $self->make_message("Message D",
+    $exp{D} = $self->make_message("Re: [D] Message A",
 				  references => [ $exp{A} ]);
     $ms{inboxsub} = $ms{conv1} = ++$ms{user};
 
@@ -1057,8 +1232,8 @@ sub test_status_replication_expunged_msg
 
     xlog "Add 3 messages in one conversation";
     $exp{A} = $self->make_message("Message A");
-    $exp{B} = $self->make_message("Message B", references => [ $exp{A} ]);
-    $exp{C} = $self->make_message("Message C", references => [ $exp{B} ]);
+    $exp{B} = $self->make_message("Re: Message A", references => [ $exp{A} ]);
+    $exp{C} = $self->make_message("Re: Re: Message A", references => [ $exp{B} ]);
     $ms{conv1} = $ms{inbox} = ($ms{user} += 3);
 
     xlog "Check the STATUS response";
@@ -1072,7 +1247,7 @@ sub test_status_replication_expunged_msg
 	    );
 
     xlog "Add one more message to the conversation";
-    $exp{D} = $self->make_message("Message D", references => [ $exp{C} ]);
+    $exp{D} = $self->make_message("Re: Re: Re: Message A", references => [ $exp{C} ]);
     xlog "Delete and expunge the message again";
     $mstore->get_client()->store(4, '+flags', '(\\Deleted)');
     $mstore->get_client()->expunge();
@@ -1120,8 +1295,8 @@ sub test_status_replication_expunged_msg_b
 
     xlog "Add 3 messages in one conversation";
     $exp{A} = $self->make_message("Message A");
-    $exp{B} = $self->make_message("Message B", references => [ $exp{A} ]);
-    $exp{C} = $self->make_message("Message C", references => [ $exp{B} ]);
+    $exp{B} = $self->make_message("Re: Message A", references => [ $exp{A} ]);
+    $exp{C} = $self->make_message("Re: Re: Message A", references => [ $exp{B} ]);
     $ms{conv1} = $ms{inbox} = ($ms{user} += 3);
 
     xlog "Check the STATUS response";
@@ -1135,7 +1310,7 @@ sub test_status_replication_expunged_msg_b
 	    );
 
     xlog "Add one more message to the conversation";
-    $exp{D} = $self->make_message("Message D",
+    $exp{D} = $self->make_message("Re: Re: Re: Message A",
 				  store => $rstore,
 				  references => [ $exp{C} ]);
     xlog "Delete and expunge the message again";
