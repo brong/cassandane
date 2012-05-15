@@ -248,6 +248,9 @@ sub test_subject_variability
 	{ subject => "Message A [trailing blob]", same_cid => 0 },
 	{ subject => "Message [interpolated blob] A", same_cid => 0 },
 	{ subject => "Message A (fwd)", same_cid => 0 },    # sigh
+	{ subject => "=?utf-8?Q?Message_A?=", same_cid => 1 },
+	{ subject => "=?utf-8?Q?Message=20A?=", same_cid => 1 },
+	{ subject => "=?utf-8?Q?Mess?= =?utf-8?Q?age=20A?=", same_cid => 1 },
     );
 
     foreach my $case (@cases)
@@ -266,6 +269,36 @@ sub test_subject_variability
 	}
 	$self->check_messages(\%exp, keyed_on => 'uid');
     }
+}
+
+sub test_append_subject_rfc2047
+{
+    my ($self) = @_;
+    my %exp;
+
+    xlog "Test APPEND of messages related by message-id but";
+    xlog "with different subject, which form two conversations,";
+    xlog "where the subjects are identical after RFC2047 decoding";
+    xlog "but differ before it, due to vagaries in different encoders.";
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($self->{store}->get_client()->capability()->{xconversations});
+
+    my $subject1 = "=?utf-8?Q?Dropbox_funksjonalitet_p=C3=A5_M?=\r\n=?utf-8?Q?y_Opera/Browse_Me?=";
+    my $subject2 = "=?UTF-8?Q?Re:=20Dropbox=20funksj?=\r\n=?UTF-8?Q?onalitet=20p=C3=A5=20My=20Ope?=\r\n=?UTF-8?Q?ra/Browse=20Me?=";
+
+    xlog "generating message A";
+    $exp{A} = $self->make_message($subject1);
+    $exp{A}->set_attributes(cid => $exp{A}->make_cid());
+    $self->check_messages(\%exp, keyed_on => 'uid');
+
+    xlog "generating message B";
+    $exp{B} = $self->make_message($subject2,
+				  references => [ $exp{A} ]);
+    $exp{B}->set_attributes(cid => $exp{A}->cid());
+    $self->check_messages(\%exp, keyed_on => 'uid');
+
+    $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
 }
 
 
