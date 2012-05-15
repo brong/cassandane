@@ -240,7 +240,7 @@ sub test_subject_variability
     xlog "generating message A";
     my $id = 1;
     $exp{$id} = $self->make_message("Message A");
-    $exp{$id}->set_attributes(cid => $exp{1}->make_cid());
+    $exp{$id}->set_attributes(cid => $exp{$id}->make_cid());
     $self->check_messages(\%exp);
 
     my @cases = (
@@ -289,7 +289,72 @@ sub test_subject_variability
 #
 # Test APPEND of messages to IMAP
 #
-sub test_append_reply
+sub test_append_subject_null
+    :min_version_3_0
+{
+    my ($self) = @_;
+    my %exp;
+
+    xlog "Test APPEND of messages related by message-id but";
+    xlog "with subjects differing, where one of the subjects";
+    xlog "is NULL or the empty string";
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($self->{store}->get_client()->capability()->{xconversations});
+
+    # All of undef, "" and "Re: " are normalised internally to the
+    # empty string "" and are considered the same valid subject.
+    # All are a different to a non-zero-length subject.
+    my @cases = (
+	{ subjectA => "Hello World", subjectB => "Hello World", same_cid => 1 },
+	{ subjectA => "Hello World", subjectB => "Re: ", same_cid => 0 },
+	{ subjectA => "Hello World", subjectB => "", same_cid => 0 },
+	{ subjectA => "Hello World", subjectB => undef, same_cid => 0 },
+
+	{ subjectA => "Re: ", subjectB => "Hello World", same_cid => 0 },
+	{ subjectA => "Re: ", subjectB => "Re: ", same_cid => 1 },
+	{ subjectA => "Re: ", subjectB => "", same_cid => 1 },
+	{ subjectA => "Re: ", subjectB => undef, same_cid => 1 },
+
+	{ subjectA => "", subjectB => "Hello World", same_cid => 0 },
+	{ subjectA => "", subjectB => "Re: ", same_cid => 1 },
+	{ subjectA => "", subjectB => "", same_cid => 1 },
+	{ subjectA => "", subjectB => undef, same_cid => 1 },
+
+	{ subjectA => undef, subjectB => "Hello World", same_cid => 0 },
+	{ subjectA => undef, subjectB => "Re: ", same_cid => 1 },
+	{ subjectA => undef, subjectB => "", same_cid => 1 },
+	{ subjectA => undef, subjectB => undef, same_cid => 1 },
+    );
+
+    my $id = 1;
+    foreach my $case (@cases)
+    {
+	xlog "generating message A($id)";
+	my $msgA = $self->make_message($case->{subjectA});
+	$msgA->set_attributes(cid => $msgA->make_cid());
+	$exp{$id} = $msgA;
+	$id++;
+
+	xlog "generating message B($id)";
+	my $msgB = $self->make_message($case->{subjectB}, references => [ $msgA ]);
+	$exp{$id} = $msgB;
+	$id++;
+	if ($case->{same_cid})
+	{
+	    $msgB->set_attribute(cid => $msgA->cid());
+	}
+	else
+	{
+	    $msgB->set_attribute(cid => $msgB->make_cid());
+	    $self->assert_str_not_equals($msgA->cid(), $msgB->cid());
+	}
+	$self->check_messages(\%exp, keyed_on => 'uid');
+    }
+}
+
+
+sub test_append
     :min_version_3_0
 {
     my ($self) = @_;
