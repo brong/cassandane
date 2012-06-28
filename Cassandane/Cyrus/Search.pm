@@ -126,4 +126,124 @@ sub test_from
     $self->check_messages(\%exp);
 }
 
+sub run_squat_dump
+{
+    my ($self, @args) = @_;
+
+    my $filename = $self->{instance}->{basedir} . "/squat_dump.out";
+
+    $self->{instance}->run_command({
+	    cyrus => 1,
+	    redirects => { stdout => $filename },
+	},
+	'squat_dump',
+	# we get -C for free
+	@args
+    );
+
+    my $res = {};
+    my $mb;
+    open RESULTS, '<', $filename
+	or die "Cannot open $filename for reading: $!";
+    while ($_ = readline(RESULTS))
+    {
+	chomp;
+	my @a = split;
+	if ($a[0] eq 'MAILBOX')
+	{
+	    $res->{$a[1]} ||= {};
+	    $mb = $res->{$a[1]};
+	    next;
+	}
+	elsif ($a[0] eq 'DOC')
+	{
+	    my ($uidv) = ($a[1] =~ m/^validity\.(\d+)$/);
+	    if (defined $uidv)
+	    {
+		$mb->{uidvalidity} = 0+$uidv;
+	    }
+	    else
+	    {
+		my ($field, $uid) = ($a[1] =~ m/^([mhftcbs])(\d+)$/);
+		my $size = $a[2];
+		next if !defined $uid;
+		$mb->{$uid} ||= {};
+		$mb->{$uid}->{$field} = 0+$size;
+	    }
+	}
+    }
+    close RESULTS;
+
+    return $res;
+}
+
+sub config_squatter
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=squat";
+    $conf->set(search_engine => 'squat');
+}
+
+sub test_squatter
+{
+    my ($self) = @_;
+
+    xlog "test squatter";
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    xlog "append some messages";
+    my %exp;
+    my $N1 = 10;
+    for (1..$N1)
+    {
+	$exp{$_} = $self->make_message("Message $_");
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Before first index, there is nothing to dump";
+    my $res;
+    # TODO: this should exit abnormally, setup handlers to catch that
+#    eval { $res = $self->run_squat_dump($mboxname); };
+#    $self->assert_null($res);
+
+    xlog "First index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the first index run";
+    $res = $self->run_squat_dump($mboxname);
+    $self->assert_not_null($res);
+    $self->assert_not_null($res->{$mboxname});
+    for (1..$N1)
+    {
+	$self->assert_not_null($res->{$mboxname}->{$_});
+	$self->assert_not_null($res->{$mboxname}->{$_}->{m});
+	$self->assert_not_null($res->{$mboxname}->{$_}->{h});
+    }
+
+    xlog "Second index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "The second run should have no further effect";
+    my $res2 = $self->run_squat_dump($mboxname);
+    $self->assert_deep_equals($res, $res2);
+
+    xlog "Add another message";
+    my $uid = $N1+1;
+    $exp{$uid} = $self->make_message("Message $uid");
+
+    xlog "Third index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "The third run should have indexed the new message";
+    $res2 = $self->run_squat_dump($mboxname);
+    $self->assert_not_null($res2->{$mboxname}->{$uid});
+    $self->assert_not_null($res2->{$mboxname}->{$uid}->{m});
+    $self->assert_not_null($res2->{$mboxname}->{$uid}->{h});
+    delete $res2->{$mboxname}->{$uid};
+    $self->assert_deep_equals($res, $res2);
+
+}
+
 1;
