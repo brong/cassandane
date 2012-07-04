@@ -44,6 +44,8 @@ use strict;
 use warnings;
 use Cwd qw(abs_path);
 use DateTime;
+use POSIX qw(:errno_h);
+use Cassandane::Util::Log;
 use Data::Dumper;
 
 use lib '.';
@@ -142,7 +144,8 @@ sub run_squat_dump
     );
 
     my $res = {};
-    my $mb;
+    my $mboxname;
+    my $uidvalidity;
     open RESULTS, '<', $filename
 	or die "Cannot open $filename for reading: $!";
     while ($_ = readline(RESULTS))
@@ -151,8 +154,8 @@ sub run_squat_dump
 	my @a = split;
 	if ($a[0] eq 'MAILBOX')
 	{
-	    $res->{$a[1]} ||= {};
-	    $mb = $res->{$a[1]};
+	    $mboxname = $a[1];
+	    $res->{$mboxname} ||= {};
 	    next;
 	}
 	elsif ($a[0] eq 'DOC')
@@ -160,15 +163,15 @@ sub run_squat_dump
 	    my ($uidv) = ($a[1] =~ m/^validity\.(\d+)$/);
 	    if (defined $uidv)
 	    {
-		$mb->{uidvalidity} = 0+$uidv;
+		$uidvalidity = 0+$uidv;
+		$res->{$mboxname}->{$uidvalidity} ||= {}
 	    }
 	    else
 	    {
 		my ($field, $uid) = ($a[1] =~ m/^([mhftcbs])(\d+)$/);
 		my $size = $a[2];
 		next if !defined $uid;
-		$mb->{$uid} ||= {};
-		$mb->{$uid}->{$field} = 0+$size;
+		$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
 	    }
 	}
     }
@@ -177,20 +180,23 @@ sub run_squat_dump
     return $res;
 }
 
-sub config_squatter
+sub config_squatter_squat
 {
     my ($self, $conf) = @_;
     xlog "Setting search_engine=squat";
     $conf->set(search_engine => 'squat');
 }
 
-sub test_squatter
+sub test_squatter_squat
 {
     my ($self) = @_;
 
-    xlog "test squatter";
+    xlog "test squatter with SQUAT";
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
 
     xlog "append some messages";
     my %exp;
@@ -203,24 +209,21 @@ sub test_squatter
     $self->check_messages(\%exp);
 
     xlog "Before first index, there is nothing to dump";
-    my $res;
-    # TODO: this should exit abnormally, setup handlers to catch that
-#    eval { $res = $self->run_squat_dump($mboxname); };
-#    $self->assert_null($res);
+    $res = $self->run_squat_dump();
+    $self->assert_deep_equals({}, $res);
 
     xlog "First index run";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the first index run";
     $res = $self->run_squat_dump($mboxname);
-    $self->assert_not_null($res);
-    $self->assert_not_null($res->{$mboxname});
-    for (1..$N1)
-    {
-	$self->assert_not_null($res->{$mboxname}->{$_});
-	$self->assert_not_null($res->{$mboxname}->{$_}->{m});
-	$self->assert_not_null($res->{$mboxname}->{$_}->{h});
-    }
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..$N1)
+		}
+	    }
+	}, $res);
 
     xlog "Second index run";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
@@ -237,13 +240,202 @@ sub test_squatter
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "The third run should have indexed the new message";
-    $res2 = $self->run_squat_dump($mboxname);
-    $self->assert_not_null($res2->{$mboxname}->{$uid});
-    $self->assert_not_null($res2->{$mboxname}->{$uid}->{m});
-    $self->assert_not_null($res2->{$mboxname}->{$uid}->{h});
-    delete $res2->{$mboxname}->{$uid};
+    $res = $self->run_squat_dump($mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..($N1+1))
+		}
+	    }
+	}, $res);
+}
+
+sub config_squatter_sphinx
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+}
+
+sub run_sphinx_dump
+{
+    my ($self, $instance) = @_;
+    $instance ||= $self->{instance};
+
+    my $filename = $instance->{basedir} . "/sphinx_dump.out";
+    my $sock = $instance->{basedir} . '/conf/sphinx/searchd.sock';
+
+    $instance->run_command(
+	    { redirects => { stdout => $filename } },
+	    'mysql',
+	    '--socket', $sock,
+	    '--batch',
+	    '--raw',
+	    '-e', 'SELECT cyrusid FROM rt'
+	    );
+
+    my $res = {};
+    open RESULTS, '<', $filename
+	or die "Cannot open $filename for reading: $!";
+    while ($_ = readline(RESULTS))
+    {
+	chomp;
+	my @a = split(/\./);
+	next if scalar(@a) < 3;
+	my $uid = 0 + pop(@a);
+	my $uidvalidity = 0 + pop(@a);
+	my $mboxname = join('.', @a);
+	$res->{$mboxname} ||= {};
+	$res->{$mboxname}->{$uidvalidity} ||= {};
+	$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
+    }
+    close RESULTS;
+
+    return $res;
+}
+
+sub start_searchd
+{
+    my ($self, $instance) = @_;
+    $instance ||= $self->{instance};
+
+    my $sphinxdir = $instance->{basedir} . '/conf/sphinx';
+    my $config = "$sphinxdir/sphinx.conf";
+
+    xlog "Making $sphinxdir";
+    my $r = mkdir($sphinxdir);
+    die "Cannot create $sphinxdir: $!" if (!defined $r && $! != EEXIST);
+
+    $r = mkdir("$sphinxdir/binlog");
+    die "Cannot create $sphinxdir/binlog: $!" if (!defined $r && $! != EEXIST);
+
+    xlog "Writing $config";
+    open CONF, '>', $config
+	or die "Cannot open $config for writing: $!";
+
+print CONF <<EOT;
+index rt
+{
+    type = rt
+    path = $sphinxdir/rt
+    morphology = stem_en
+    charset_type = utf-8
+
+    rt_attr_string = cyrusid
+    rt_field = header_from
+    rt_field = header_to
+    rt_field = header_cc
+    rt_field = header_bcc
+    rt_field = header_subject
+    rt_field = headers
+    rt_field = body
+}
+
+index latest
+{
+    type = rt
+    path = $sphinxdir/latest
+    rt_attr_string = mboxname
+    rt_attr_uint = uidvalidity
+    rt_attr_uint = uid
+    rt_field = dummy
+}
+
+searchd
+{
+    listen = $sphinxdir/searchd.sock:mysql41
+    log = $sphinxdir/searchd.log
+    pid_file = $sphinxdir/searchd.pid
+    binlog_path = $sphinxdir/binlog
+    compat_sphinxql_magics = 0
+    workers = threads
+}
+EOT
+    close CONF;
+
+    $instance->run_command({},
+	'/usr/bin/searchd',
+	'--config', $config);
+}
+
+sub stop_searchd
+{
+    my ($self, $instance) = @_;
+    $instance ||= $self->{instance};
+
+    my $config = $instance->{basedir} . '/conf/sphinx/sphinx.conf';
+
+    $instance->run_command({},
+	'/usr/bin/searchd',
+	'--config', $config,
+	'--stop');
+}
+
+sub test_squatter_sphinx
+{
+    my ($self) = @_;
+
+    xlog "test squatter with Sphinx";
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    $self->start_searchd();
+
+    xlog "append some messages";
+    my %exp;
+    my $N1 = 10;
+    for (1..$N1)
+    {
+	$exp{$_} = $self->make_message("Message $_");
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Before first index, there is nothing to dump";
+    $res = $self->run_sphinx_dump();
+    $self->assert_deep_equals({}, $res);
+
+    xlog "First index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the first index run";
+    $res = $self->run_sphinx_dump();
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..$N1)
+		}
+	    }
+	}, $res);
+
+    xlog "Second index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "The second run should have no further effect";
+    my $res2 = $self->run_sphinx_dump();
     $self->assert_deep_equals($res, $res2);
 
+    xlog "Add another message";
+    my $uid = $N1+1;
+    $exp{$uid} = $self->make_message("Message $uid");
+
+    xlog "Third index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "The third run should have indexed the new message";
+    $res = $self->run_sphinx_dump();
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..$N1+1)
+		}
+	    }
+	}, $res);
+
+    $self->stop_searchd();
 }
 
 1;
