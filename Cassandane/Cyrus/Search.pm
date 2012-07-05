@@ -294,83 +294,6 @@ sub run_sphinx_dump
     return $res;
 }
 
-sub start_searchd
-{
-    my ($self, $instance) = @_;
-    $instance ||= $self->{instance};
-
-    my $sphinxdir = $instance->{basedir} . '/conf/sphinx';
-    my $config = "$sphinxdir/sphinx.conf";
-
-    xlog "Making $sphinxdir";
-    my $r = mkdir($sphinxdir);
-    die "Cannot create $sphinxdir: $!" if (!defined $r && $! != EEXIST);
-
-    $r = mkdir("$sphinxdir/binlog");
-    die "Cannot create $sphinxdir/binlog: $!" if (!defined $r && $! != EEXIST);
-
-    xlog "Writing $config";
-    open CONF, '>', $config
-	or die "Cannot open $config for writing: $!";
-
-print CONF <<EOT;
-index rt
-{
-    type = rt
-    path = $sphinxdir/rt
-    morphology = stem_en
-    charset_type = utf-8
-
-    rt_attr_string = cyrusid
-    rt_field = header_from
-    rt_field = header_to
-    rt_field = header_cc
-    rt_field = header_bcc
-    rt_field = header_subject
-    rt_field = headers
-    rt_field = body
-}
-
-index latest
-{
-    type = rt
-    path = $sphinxdir/latest
-    rt_attr_string = mboxname
-    rt_attr_uint = uidvalidity
-    rt_attr_uint = uid
-    rt_field = dummy
-}
-
-searchd
-{
-    listen = $sphinxdir/searchd.sock:mysql41
-    log = $sphinxdir/searchd.log
-    pid_file = $sphinxdir/searchd.pid
-    binlog_path = $sphinxdir/binlog
-    compat_sphinxql_magics = 0
-    workers = threads
-}
-EOT
-    close CONF;
-
-    $instance->run_command({},
-	'/usr/bin/searchd',
-	'--config', $config);
-}
-
-sub stop_searchd
-{
-    my ($self, $instance) = @_;
-    $instance ||= $self->{instance};
-
-    my $config = $instance->{basedir} . '/conf/sphinx/sphinx.conf';
-
-    $instance->run_command({},
-	'/usr/bin/searchd',
-	'--config', $config,
-	'--stop');
-}
-
 sub test_squatter_sphinx
 {
     my ($self) = @_;
@@ -382,7 +305,7 @@ sub test_squatter_sphinx
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->start_searchd();
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start');
 
     xlog "append some messages";
     my %exp;
@@ -435,7 +358,7 @@ sub test_squatter_sphinx
 	    }
 	}, $res);
 
-    $self->stop_searchd();
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
 }
 
 1;
