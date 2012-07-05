@@ -128,19 +128,19 @@ sub test_from
     $self->check_messages(\%exp);
 }
 
-sub run_squat_dump
+sub squat_dump
 {
-    my ($self, @args) = @_;
+    my ($instance, $mbox) = @_;
 
-    my $filename = $self->{instance}->{basedir} . "/squat_dump.out";
+    my $filename = $instance->{basedir} . "/squat_dump.out";
 
-    $self->{instance}->run_command({
+    $instance->run_command({
 	    cyrus => 1,
 	    redirects => { stdout => $filename },
 	},
 	'squat_dump',
 	# we get -C for free
-	@args
+	$mbox
     );
 
     my $res = {};
@@ -192,75 +192,12 @@ sub test_squatter_squat
     my ($self) = @_;
 
     xlog "test squatter with SQUAT";
-    my $talk = $self->{store}->get_client();
-    my $mboxname = 'user.cassandane';
-
-    my $res = $talk->status($mboxname, ['uidvalidity']);
-    my $uidvalidity = $res->{uidvalidity};
-
-    xlog "append some messages";
-    my %exp;
-    my $N1 = 10;
-    for (1..$N1)
-    {
-	$exp{$_} = $self->make_message("Message $_");
-    }
-    xlog "check the messages got there";
-    $self->check_messages(\%exp);
-
-    xlog "Before first index, there is nothing to dump";
-    $res = $self->run_squat_dump();
-    $self->assert_deep_equals({}, $res);
-
-    xlog "First index run";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
-
-    xlog "Check the results of the first index run";
-    $res = $self->run_squat_dump($mboxname);
-    $self->assert_deep_equals({
-	    $mboxname => {
-		$uidvalidity => {
-		    map { $_ => 1 } (1..$N1)
-		}
-	    }
-	}, $res);
-
-    xlog "Second index run";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
-
-    xlog "The second run should have no further effect";
-    my $res2 = $self->run_squat_dump($mboxname);
-    $self->assert_deep_equals($res, $res2);
-
-    xlog "Add another message";
-    my $uid = $N1+1;
-    $exp{$uid} = $self->make_message("Message $uid");
-
-    xlog "Third index run";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
-
-    xlog "The third run should have indexed the new message";
-    $res = $self->run_squat_dump($mboxname);
-    $self->assert_deep_equals({
-	    $mboxname => {
-		$uidvalidity => {
-		    map { $_ => 1 } (1..($N1+1))
-		}
-	    }
-	}, $res);
+    $self->squatter_test_common(\&squat_dump);
 }
 
-sub config_squatter_sphinx
+sub sphinx_dump
 {
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-}
-
-sub run_sphinx_dump
-{
-    my ($self, $instance) = @_;
-    $instance ||= $self->{instance};
+    my ($instance, $mbox) = @_;
 
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
     my $sock = $instance->{basedir} . '/conf/sphinx/searchd.sock';
@@ -285,6 +222,7 @@ sub run_sphinx_dump
 	my $uid = 0 + pop(@a);
 	my $uidvalidity = 0 + pop(@a);
 	my $mboxname = join('.', @a);
+	next if (defined $mbox && $mboxname ne $mbox);
 	$res->{$mboxname} ||= {};
 	$res->{$mboxname}->{$uidvalidity} ||= {};
 	$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
@@ -294,11 +232,25 @@ sub run_sphinx_dump
     return $res;
 }
 
+sub config_squatter_sphinx
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+}
+
 sub test_squatter_sphinx
 {
     my ($self) = @_;
 
     xlog "test squatter with Sphinx";
+    $self->squatter_test_common(\&sphinx_dump);
+}
+
+sub squatter_test_common
+{
+    my ($self, $dumper) = @_;
+
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
 
@@ -318,14 +270,14 @@ sub test_squatter_sphinx
     $self->check_messages(\%exp);
 
     xlog "Before first index, there is nothing to dump";
-    $res = $self->run_sphinx_dump();
+    $res = $dumper->($self->{instance}, $mboxname);
     $self->assert_deep_equals({}, $res);
 
     xlog "First index run";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the first index run";
-    $res = $self->run_sphinx_dump();
+    $res = $dumper->($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
@@ -338,7 +290,7 @@ sub test_squatter_sphinx
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "The second run should have no further effect";
-    my $res2 = $self->run_sphinx_dump();
+    my $res2 = $dumper->($self->{instance}, $mboxname);
     $self->assert_deep_equals($res, $res2);
 
     xlog "Add another message";
@@ -349,7 +301,7 @@ sub test_squatter_sphinx
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "The third run should have indexed the new message";
-    $res = $self->run_sphinx_dump();
+    $res = $dumper->($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
