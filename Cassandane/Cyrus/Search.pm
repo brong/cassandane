@@ -313,4 +313,168 @@ sub squatter_test_common
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
 }
 
+sub config_prefilter_squat
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=squat";
+    $conf->set(search_engine => 'squat');
+}
+
+sub test_prefilter_squat
+{
+    my ($self) = @_;
+
+    xlog "test squatter with Squat";
+    $self->prefilter_test_common();
+}
+
+sub config_prefilter_sphinx
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+}
+
+sub test_prefilter_sphinx
+{
+    my ($self) = @_;
+
+    xlog "test squatter with Sphinx";
+    $self->prefilter_test_common();
+}
+
+sub index_dump
+{
+    my ($instance, @args) = @_;
+
+    my $filename = $instance->{basedir} . "/index_dump.out";
+
+    $instance->run_command({
+	    cyrus => 1,
+	    redirects => { stdout => $filename },
+	},
+	'squatter',
+	# we get -C for free
+	@args
+    );
+
+    my $res = {};
+    my $mboxname;
+    open RESULTS, '<', $filename
+	or die "Cannot open $filename for reading: $!";
+    while ($_ = readline(RESULTS))
+    {
+	chomp;
+	my @a = split;
+	if ($a[0] eq 'mailbox')
+	{
+	    $mboxname = $a[1];
+	    $res->{$mboxname} ||= {};
+	    next;
+	}
+	elsif ($a[0] eq 'uid')
+	{
+	    $res->{$mboxname}->{$a[1]} = 1;
+	}
+    }
+    close RESULTS;
+
+    return $res;
+}
+
+sub prefilter_test_common
+{
+    my ($self, $dumper) = @_;
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start');
+
+    xlog "append some messages";
+    # data thanks to hipsteripsum.me
+    my @bodies = (
+	'pickled sartorial beer',
+	'authentic twee beer',
+	'vice irony beer',
+	'tattooed twee beer',
+	'mustache twee beer',
+	'williamsburg irony beer',
+	'organic sartorial beer',
+	'freegan twee beer',
+	'ennui sartorial beer',
+	'quinoa irony beer'
+    );
+    my %exp;
+    my $uid = 1;
+    foreach my $body (@bodies)
+    {
+	$exp{$uid} = $self->make_message("Message $uid", body => "$body\r\n");
+	$uid++;
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    my @tests = (
+	# Test each of the terms which appear in just one message
+	{ term => 'pickled', expected => [ 1 ] },
+	{ term => 'authentic', expected => [ 2 ] },
+	{ term => 'vice', expected => [ 3 ] },
+	{ term => 'tattooed', expected => [ 4 ] },
+	{ term => 'mustache', expected => [ 5 ] },
+	{ term => 'williamsburg', expected => [ 6 ] },
+	{ term => 'organic', expected => [ 7 ] },
+	{ term => 'freegan', expected => [ 8 ] },
+	{ term => 'ennui', expected => [ 9 ] },
+	{ term => 'quinoa', expected => [ 10 ] },
+	# Test the terms which appear in some but not all messages
+	{ term => 'sartorial', expected => [ 1, 7, 9 ] },
+	{ term => 'twee', expected => [ 2, 4, 5, 8 ] },
+	{ term => 'irony', expected => [ 3, 6, 10 ] },
+	# Test the term which appears in all messages
+	{ term => 'beer', expected => [ 1..10 ] },
+	# Test a term which appears in no messages
+	{ term => 'cosby', expected => [ ] },
+	# Test AND of two terms
+	{ term => '__begin:and pickled authentic __end:and', expected => [ ] },
+	{ term => '__begin:and twee irony __end:and', expected => [ ] },
+	{ term => '__begin:and twee mustache __end:and', expected => [ 5 ] },
+	{ term => '__begin:and quinoa beer __end:and', expected => [ 10 ] },
+	{ term => '__begin:and twee beer __end:and', expected => [ 2, 4, 5, 8 ] },
+	# Test AND of three terms
+	{ term => '__begin:and pickled tattooed williamsburg __end:and', expected => [ ] },
+	{ term => '__begin:and quinoa organic beer __end:and', expected => [ ] },
+	{ term => '__begin:and quinoa irony beer __end:and', expected => [ 10 ] },
+	# Test OR of two terms
+	{ term => '__begin:or pickled authentic __end:or', expected => [ 1, 2 ] },
+	{ term => '__begin:or twee irony __end:or', expected => [ 2, 3, 4, 5, 6, 8, 10 ] },
+	{ term => '__begin:or twee mustache __end:or', expected => [ 2, 4, 5, 8 ] },
+	{ term => '__begin:or quinoa beer __end:or', expected => [ 1..10 ] },
+	{ term => '__begin:or twee beer __end:or', expected => [ 1..10 ] },
+	# Test OR of three terms
+	{ term => '__begin:or pickled tattooed williamsburg __end:or', expected => [ 1, 4, 6 ] },
+	{ term => '__begin:or quinoa organic beer __end:or', expected => [ 1..10 ] },
+	{ term => '__begin:or quinoa irony beer __end:or', expected => [ 1..10 ] },
+    );
+    foreach my $t (@tests)
+    {
+	xlog "Testing query \"$t->{term}\"";
+	$res = index_dump($self->{instance}, '-vv', '-e', $t->{term}, $mboxname);
+	$self->assert_deep_equals({
+	    $mboxname => {
+		map { $_ => 1 } @{$t->{expected}}
+	    }
+	}, $res);
+    }
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
+}
+
 1;
