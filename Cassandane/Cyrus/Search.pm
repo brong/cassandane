@@ -400,38 +400,43 @@ sub prefilter_test_common
 	{
 	    body => 'pickled sartorial beer',
 	    subject => 'umami',
-	    to => 'viral',
+	    to => 'viral mixtape',
 	    from => 'etsy',
 	    cc => 'cred',
 	    bcc => 'streetart',
+	    narwhal => 'butcher',
 	},{
 	    body => 'authentic twee beer',
 	    subject => 'lomo',
 	    to => 'cray',
-	    from => 'artisan',
+	    from => 'artisan mixtape',
 	    cc => 'beard',
 	    bcc => 'fannypack',
+	    narwhal => 'postironic',
 	},{
 	    body => 'vice irony beer',
 	    subject => 'chambray',
 	    to => 'chips',
 	    from => 'banhmi',
-	    cc => 'dreamcatcher',
+	    cc => 'dreamcatcher mixtape',
 	    bcc => 'portland',
+	    narwhal => 'gentrify',
 	},{
 	    body => 'tattooed twee beer',
 	    subject => 'ethnic',
 	    to => 'selvage',
 	    from => 'forage',
 	    cc => 'carles',
-	    bcc => 'shoreditch',
+	    bcc => 'shoreditch mixtape',
+	    narwhal => 'pinterest',
 	},{
 	    body => 'mustache twee beer',
-	    subject => 'semiotics',
+	    subject => 'semiotics mixtape',
 	    to => 'blog',
 	    from => 'nextlevel',
 	    cc => 'trustfund',
 	    bcc => 'austin',
+	    narwhal => 'tumblr',
 	},{
 	    body => 'williamsburg irony beer',
 	    subject => 'whatever',
@@ -439,13 +444,15 @@ sub prefilter_test_common
 	    from => 'truffaut',
 	    cc => 'squid',
 	    bcc => 'porkbelly',
+	    narwhal => 'fingerstache mixtape',
 	},{
-	    body => 'organic sartorial beer',
+	    body => 'organic sartorial beer mixtape',
 	    subject => 'letterpress',
 	    to => 'occupuy',
 	    from => 'cliche',
 	    cc => 'readymade',
 	    bcc => 'highlife',
+	    narwhal => 'artparty',
 	},{
 	    body => 'freegan twee beer',
 	    subject => 'flexitarian',
@@ -453,6 +460,7 @@ sub prefilter_test_common
 	    from => 'bespoke',
 	    cc => 'salvia',
 	    bcc => 'godard',
+	    narwhal => 'helvetica',
 	},{
 	    body => 'ennui sartorial beer',
 	    subject => 'banksy',
@@ -460,6 +468,7 @@ sub prefilter_test_common
 	    from => 'jeanshorts',
 	    cc => 'seitan',
 	    bcc => 'locavore',
+	    narwhal => 'hoodie',
 	},{
 	    body => 'quinoa irony beer',
 	    subject => 'pitchfork',
@@ -467,6 +476,7 @@ sub prefilter_test_common
 	    from => 'brunch',
 	    cc => 'kogi',
 	    bcc => 'echopark',
+	    narwhal => 'messengerbag',
 	}
     );
     my %exp;
@@ -488,6 +498,7 @@ sub prefilter_test_common
 					 from => $from,
 					 cc => $cc,
 					 bcc => $bcc,
+					 extra_headers => [ [ 'Narwhal', $d->{narwhal} ] ]
 					 );
 	$uid++;
     }
@@ -645,6 +656,19 @@ sub prefilter_test_common
 	{ query => 'bcc:godard', expected => [ 8 ] },
 	{ query => 'bcc:locavore', expected => [ 9 ] },
 	{ query => 'bcc:echopark', expected => [ 10 ] },
+	# Test each of the terms which appear in the header of just one message
+	{ query => 'header:butcher', expected => [ 1 ] },
+	{ query => 'header:postironic', expected => [ 2 ] },
+	{ query => 'header:gentrify', expected => [ 3 ] },
+	{ query => 'header:pinterest', expected => [ 4 ] },
+	{ query => 'header:tumblr', expected => [ 5 ] },
+	{ query => 'header:fingerstache', expected => [ 6 ] },
+	{ query => 'header:artparty', expected => [ 7 ] },
+	{ query => 'header:helvetica', expected => [ 8 ] },
+	{ query => 'header:hoodie', expected => [ 9 ] },
+	{ query => 'header:messengerbag', expected => [ 10 ] },
+	# Test a term that appears in the header of every message
+	{ query => 'header:narwhal', expected => [ 1..10 ] },
 	# Test each of the terms which appear in the body of just one message
 	{ query => 'body:pickled', expected => [ 1 ] },
 	{ query => 'body:authentic', expected => [ 2 ] },
@@ -656,6 +680,15 @@ sub prefilter_test_common
 	{ query => 'body:freegan', expected => [ 8 ] },
 	{ query => 'body:ennui', expected => [ 9 ] },
 	{ query => 'body:quinoa', expected => [ 10 ] },
+	# Test that terms are matched *only* in the field requested
+	{ query => 'to:mixtape', expected => [ 1 ] },
+	{ query => 'from:mixtape', expected => [ 2 ] },
+	{ query => 'cc:mixtape', expected => [ 3 ] },
+	{ query => 'bcc:mixtape', expected => [ 4 ] },
+	{ query => 'subject:mixtape', expected => [ 5 ] },
+	# header: matches any header
+	{ query => 'header:mixtape', expected => [ 1..6 ] },
+	{ query => 'body:mixtape', expected => [ 7 ] },
     );
     foreach my $t (@tests)
     {
