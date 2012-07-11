@@ -396,23 +396,99 @@ sub prefilter_test_common
 
     xlog "append some messages";
     # data thanks to hipsteripsum.me
-    my @bodies = (
-	'pickled sartorial beer',
-	'authentic twee beer',
-	'vice irony beer',
-	'tattooed twee beer',
-	'mustache twee beer',
-	'williamsburg irony beer',
-	'organic sartorial beer',
-	'freegan twee beer',
-	'ennui sartorial beer',
-	'quinoa irony beer'
+    my @data = (
+	{
+	    body => 'pickled sartorial beer',
+	    subject => 'umami',
+	    to => 'viral',
+	    from => 'etsy',
+	    cc => 'cred',
+	    bcc => 'streetart',
+	},{
+	    body => 'authentic twee beer',
+	    subject => 'lomo',
+	    to => 'cray',
+	    from => 'artisan',
+	    cc => 'beard',
+	    bcc => 'fannypack',
+	},{
+	    body => 'vice irony beer',
+	    subject => 'chambray',
+	    to => 'chips',
+	    from => 'banhmi',
+	    cc => 'dreamcatcher',
+	    bcc => 'portland',
+	},{
+	    body => 'tattooed twee beer',
+	    subject => 'ethnic',
+	    to => 'selvage',
+	    from => 'forage',
+	    cc => 'carles',
+	    bcc => 'shoreditch',
+	},{
+	    body => 'mustache twee beer',
+	    subject => 'semiotics',
+	    to => 'blog',
+	    from => 'nextlevel',
+	    cc => 'trustfund',
+	    bcc => 'austin',
+	},{
+	    body => 'williamsburg irony beer',
+	    subject => 'whatever',
+	    to => 'gastropub',
+	    from => 'truffaut',
+	    cc => 'squid',
+	    bcc => 'porkbelly',
+	},{
+	    body => 'organic sartorial beer',
+	    subject => 'letterpress',
+	    to => 'occupuy',
+	    from => 'cliche',
+	    cc => 'readymade',
+	    bcc => 'highlife',
+	},{
+	    body => 'freegan twee beer',
+	    subject => 'flexitarian',
+	    to => 'scenester',
+	    from => 'bespoke',
+	    cc => 'salvia',
+	    bcc => 'godard',
+	},{
+	    body => 'ennui sartorial beer',
+	    subject => 'banksy',
+	    to => 'aesthetic',
+	    from => 'jeanshorts',
+	    cc => 'seitan',
+	    bcc => 'locavore',
+	},{
+	    body => 'quinoa irony beer',
+	    subject => 'pitchfork',
+	    to => 'cardigan',
+	    from => 'brunch',
+	    cc => 'kogi',
+	    bcc => 'echopark',
+	}
     );
     my %exp;
     my $uid = 1;
-    foreach my $body (@bodies)
+    foreach my $d (@data)
     {
-	$exp{$uid} = $self->make_message("Message $uid", body => "$body\r\n");
+	my $to = Cassandane::Address->new(
+		    name => "Test User $d->{to}",
+		    localpart => 'test',
+		    domain => 'vmtom.com'
+		);
+	my $from = Cassandane::Generator::make_random_address(extra => " $d->{from}");
+	my $cc = Cassandane::Generator::make_random_address(extra => " $d->{cc}");
+	my $bcc = Cassandane::Generator::make_random_address(extra => " $d->{bcc}");
+
+	$exp{$uid} = $self->make_message($d->{subject} . " [$uid]",
+					 body => $d->{body} . "\r\n",
+					 to => $to,
+					 from => $from,
+					 cc => $cc,
+					 bcc => $bcc,
+					 );
 	$uid++;
     }
     xlog "check the messages got there";
@@ -424,49 +500,167 @@ sub prefilter_test_common
     xlog "Check the results of the index run";
     my @tests = (
 	# Test each of the terms which appear in just one message
-	{ term => 'pickled', expected => [ 1 ] },
-	{ term => 'authentic', expected => [ 2 ] },
-	{ term => 'vice', expected => [ 3 ] },
-	{ term => 'tattooed', expected => [ 4 ] },
-	{ term => 'mustache', expected => [ 5 ] },
-	{ term => 'williamsburg', expected => [ 6 ] },
-	{ term => 'organic', expected => [ 7 ] },
-	{ term => 'freegan', expected => [ 8 ] },
-	{ term => 'ennui', expected => [ 9 ] },
-	{ term => 'quinoa', expected => [ 10 ] },
+	{ query => 'pickled', expected => [ 1 ] },
+	{ query => 'authentic', expected => [ 2 ] },
+	{ query => 'vice', expected => [ 3 ] },
+	{ query => 'tattooed', expected => [ 4 ] },
+	{ query => 'mustache', expected => [ 5 ] },
+	{ query => 'williamsburg', expected => [ 6 ] },
+	{ query => 'organic', expected => [ 7 ] },
+	{ query => 'freegan', expected => [ 8 ] },
+	{ query => 'ennui', expected => [ 9 ] },
+	{ query => 'quinoa', expected => [ 10 ] },
+	{ query => 'umami', expected => [ 1 ] },
+	{ query => 'lomo', expected => [ 2 ] },
+	{ query => 'chambray', expected => [ 3 ] },
+	{ query => 'ethnic', expected => [ 4 ] },
+	{ query => 'semiotics', expected => [ 5 ] },
+	{ query => 'whatever', expected => [ 6 ] },
+	{ query => 'letterpress', expected => [ 7 ] },
+	{ query => 'flexitarian', expected => [ 8 ] },
+	{ query => 'banksy', expected => [ 9 ] },
+	{ query => 'pitchfork', expected => [ 10 ] },
+	{ query => 'viral', expected => [ 1 ] },
+	{ query => 'cray', expected => [ 2 ] },
+	{ query => 'chips', expected => [ 3 ] },
+	{ query => 'selvage', expected => [ 4 ] },
+	{ query => 'blog', expected => [ 5 ] },
+	{ query => 'gastropub', expected => [ 6 ] },
+	{ query => 'occupuy', expected => [ 7 ] },
+	{ query => 'scenester', expected => [ 8 ] },
+	{ query => 'aesthetic', expected => [ 9 ] },
+	{ query => 'cardigan', expected => [ 10 ] },
+	{ query => 'etsy', expected => [ 1 ] },
+	{ query => 'artisan', expected => [ 2 ] },
+	{ query => 'banhmi', expected => [ 3 ] },
+	{ query => 'forage', expected => [ 4 ] },
+	{ query => 'nextlevel', expected => [ 5 ] },
+	{ query => 'truffaut', expected => [ 6 ] },
+	{ query => 'cliche', expected => [ 7 ] },
+	{ query => 'bespoke', expected => [ 8 ] },
+	{ query => 'jeanshorts', expected => [ 9 ] },
+	{ query => 'brunch', expected => [ 10 ] },
+	{ query => 'cred', expected => [ 1 ] },
+	{ query => 'beard', expected => [ 2 ] },
+	{ query => 'dreamcatcher', expected => [ 3 ] },
+	{ query => 'carles', expected => [ 4 ] },
+	{ query => 'trustfund', expected => [ 5 ] },
+	{ query => 'squid', expected => [ 6 ] },
+	{ query => 'readymade', expected => [ 7 ] },
+	{ query => 'salvia', expected => [ 8 ] },
+	{ query => 'seitan', expected => [ 9 ] },
+	{ query => 'kogi', expected => [ 10 ] },
+	{ query => 'streetart', expected => [ 1 ] },
+	{ query => 'fannypack', expected => [ 2 ] },
+	{ query => 'portland', expected => [ 3 ] },
+	{ query => 'shoreditch', expected => [ 4 ] },
+	{ query => 'austin', expected => [ 5 ] },
+	{ query => 'porkbelly', expected => [ 6 ] },
+	{ query => 'highlife', expected => [ 7 ] },
+	{ query => 'godard', expected => [ 8 ] },
+	{ query => 'locavore', expected => [ 9 ] },
+	{ query => 'echopark', expected => [ 10 ] },
 	# Test the terms which appear in some but not all messages
-	{ term => 'sartorial', expected => [ 1, 7, 9 ] },
-	{ term => 'twee', expected => [ 2, 4, 5, 8 ] },
-	{ term => 'irony', expected => [ 3, 6, 10 ] },
+	{ query => 'sartorial', expected => [ 1, 7, 9 ] },
+	{ query => 'twee', expected => [ 2, 4, 5, 8 ] },
+	{ query => 'irony', expected => [ 3, 6, 10 ] },
 	# Test the term which appears in all messages
-	{ term => 'beer', expected => [ 1..10 ] },
+	{ query => 'beer', expected => [ 1..10 ] },
 	# Test a term which appears in no messages
-	{ term => 'cosby', expected => [ ] },
+	{ query => 'cosby', expected => [ ] },
 	# Test AND of two terms
-	{ term => '__begin:and pickled authentic __end:and', expected => [ ] },
-	{ term => '__begin:and twee irony __end:and', expected => [ ] },
-	{ term => '__begin:and twee mustache __end:and', expected => [ 5 ] },
-	{ term => '__begin:and quinoa beer __end:and', expected => [ 10 ] },
-	{ term => '__begin:and twee beer __end:and', expected => [ 2, 4, 5, 8 ] },
+	{ query => '__begin:and pickled authentic __end:and', expected => [ ] },
+	{ query => '__begin:and twee irony __end:and', expected => [ ] },
+	{ query => '__begin:and twee mustache __end:and', expected => [ 5 ] },
+	{ query => '__begin:and quinoa beer __end:and', expected => [ 10 ] },
+	{ query => '__begin:and twee beer __end:and', expected => [ 2, 4, 5, 8 ] },
 	# Test AND of three terms
-	{ term => '__begin:and pickled tattooed williamsburg __end:and', expected => [ ] },
-	{ term => '__begin:and quinoa organic beer __end:and', expected => [ ] },
-	{ term => '__begin:and quinoa irony beer __end:and', expected => [ 10 ] },
+	{ query => '__begin:and pickled tattooed williamsburg __end:and', expected => [ ] },
+	{ query => '__begin:and quinoa organic beer __end:and', expected => [ ] },
+	{ query => '__begin:and quinoa irony beer __end:and', expected => [ 10 ] },
 	# Test OR of two terms
-	{ term => '__begin:or pickled authentic __end:or', expected => [ 1, 2 ] },
-	{ term => '__begin:or twee irony __end:or', expected => [ 2, 3, 4, 5, 6, 8, 10 ] },
-	{ term => '__begin:or twee mustache __end:or', expected => [ 2, 4, 5, 8 ] },
-	{ term => '__begin:or quinoa beer __end:or', expected => [ 1..10 ] },
-	{ term => '__begin:or twee beer __end:or', expected => [ 1..10 ] },
+	{ query => '__begin:or pickled authentic __end:or', expected => [ 1, 2 ] },
+	{ query => '__begin:or twee irony __end:or', expected => [ 2, 3, 4, 5, 6, 8, 10 ] },
+	{ query => '__begin:or twee mustache __end:or', expected => [ 2, 4, 5, 8 ] },
+	{ query => '__begin:or quinoa beer __end:or', expected => [ 1..10 ] },
+	{ query => '__begin:or twee beer __end:or', expected => [ 1..10 ] },
 	# Test OR of three terms
-	{ term => '__begin:or pickled tattooed williamsburg __end:or', expected => [ 1, 4, 6 ] },
-	{ term => '__begin:or quinoa organic beer __end:or', expected => [ 1..10 ] },
-	{ term => '__begin:or quinoa irony beer __end:or', expected => [ 1..10 ] },
+	{ query => '__begin:or pickled tattooed williamsburg __end:or', expected => [ 1, 4, 6 ] },
+	{ query => '__begin:or quinoa organic beer __end:or', expected => [ 1..10 ] },
+	{ query => '__begin:or quinoa irony beer __end:or', expected => [ 1..10 ] },
+	# Test each term that appears in the Subject: of just one message
+	{ query => 'subject:umami', expected => [ 1 ] },
+	{ query => 'subject:lomo', expected => [ 2 ] },
+	{ query => 'subject:chambray', expected => [ 3 ] },
+	{ query => 'subject:ethnic', expected => [ 4 ] },
+	{ query => 'subject:semiotics', expected => [ 5 ] },
+	{ query => 'subject:whatever', expected => [ 6 ] },
+	{ query => 'subject:letterpress', expected => [ 7 ] },
+	{ query => 'subject:flexitarian', expected => [ 8 ] },
+	{ query => 'subject:banksy', expected => [ 9 ] },
+	{ query => 'subject:pitchfork', expected => [ 10 ] },
+	# Test each term that appears in the To: of just one message
+	{ query => 'to:viral', expected => [ 1 ] },
+	{ query => 'to:cray', expected => [ 2 ] },
+	{ query => 'to:chips', expected => [ 3 ] },
+	{ query => 'to:selvage', expected => [ 4 ] },
+	{ query => 'to:blog', expected => [ 5 ] },
+	{ query => 'to:gastropub', expected => [ 6 ] },
+	{ query => 'to:occupuy', expected => [ 7 ] },
+	{ query => 'to:scenester', expected => [ 8 ] },
+	{ query => 'to:aesthetic', expected => [ 9 ] },
+	{ query => 'to:cardigan', expected => [ 10 ] },
+	# Test a term that appears in the To: of every message
+	{ query => 'to:test', expected => [ 1..10 ] },
+	# Test each term that appears in the From: of just one message
+	{ query => 'from:etsy', expected => [ 1 ] },
+	{ query => 'from:artisan', expected => [ 2 ] },
+	{ query => 'from:banhmi', expected => [ 3 ] },
+	{ query => 'from:forage', expected => [ 4 ] },
+	{ query => 'from:nextlevel', expected => [ 5 ] },
+	{ query => 'from:truffaut', expected => [ 6 ] },
+	{ query => 'from:cliche', expected => [ 7 ] },
+	{ query => 'from:bespoke', expected => [ 8 ] },
+	{ query => 'from:jeanshorts', expected => [ 9 ] },
+	{ query => 'from:brunch', expected => [ 10 ] },
+	# Test each term that appears in the Cc: of just one message
+	{ query => 'cc:cred', expected => [ 1 ] },
+	{ query => 'cc:beard', expected => [ 2 ] },
+	{ query => 'cc:dreamcatcher', expected => [ 3 ] },
+	{ query => 'cc:carles', expected => [ 4 ] },
+	{ query => 'cc:trustfund', expected => [ 5 ] },
+	{ query => 'cc:squid', expected => [ 6 ] },
+	{ query => 'cc:readymade', expected => [ 7 ] },
+	{ query => 'cc:salvia', expected => [ 8 ] },
+	{ query => 'cc:seitan', expected => [ 9 ] },
+	{ query => 'cc:kogi', expected => [ 10 ] },
+	# Test each term that appears in the Bcc: of just one message
+	{ query => 'bcc:streetart', expected => [ 1 ] },
+	{ query => 'bcc:fannypack', expected => [ 2 ] },
+	{ query => 'bcc:portland', expected => [ 3 ] },
+	{ query => 'bcc:shoreditch', expected => [ 4 ] },
+	{ query => 'bcc:austin', expected => [ 5 ] },
+	{ query => 'bcc:porkbelly', expected => [ 6 ] },
+	{ query => 'bcc:highlife', expected => [ 7 ] },
+	{ query => 'bcc:godard', expected => [ 8 ] },
+	{ query => 'bcc:locavore', expected => [ 9 ] },
+	{ query => 'bcc:echopark', expected => [ 10 ] },
+	# Test each of the terms which appear in the body of just one message
+	{ query => 'body:pickled', expected => [ 1 ] },
+	{ query => 'body:authentic', expected => [ 2 ] },
+	{ query => 'body:vice', expected => [ 3 ] },
+	{ query => 'body:tattooed', expected => [ 4 ] },
+	{ query => 'body:mustache', expected => [ 5 ] },
+	{ query => 'body:williamsburg', expected => [ 6 ] },
+	{ query => 'body:organic', expected => [ 7 ] },
+	{ query => 'body:freegan', expected => [ 8 ] },
+	{ query => 'body:ennui', expected => [ 9 ] },
+	{ query => 'body:quinoa', expected => [ 10 ] },
     );
     foreach my $t (@tests)
     {
-	xlog "Testing query \"$t->{term}\"";
-	$res = index_dump($self->{instance}, '-vv', '-e', $t->{term}, $mboxname);
+	xlog "Testing query \"$t->{query}\"";
+	$res = index_dump($self->{instance}, '-vv', '-e', $t->{query}, $mboxname);
 	$self->assert_deep_equals({
 	    $mboxname => {
 		map { $_ => 1 } @{$t->{expected}}
