@@ -1800,6 +1800,94 @@ sub test_msg_replication_new_mas_partial_wwd
     $self->check_msg_annotation_replication($master_store, $replica_store);
 }
 
+sub test_msg_replication_swap
+{
+    my ($self) = @_;
+
+    xlog "testing replication of message scope annotations";
+    xlog "case swap: annotation swaps from one message to another";
+
+    xlog "need a master and replica pair";
+    $self->assert_not_null($self->{replica});
+    my $master_store = $self->{master_store};
+    my $replica_store = $self->{replica_store};
+
+    my $entry = '/comment';
+    my $attrib = 'value.priv';
+    # Data from hipsteripsum.me
+    my $value1 = "art party";
+    my $value2 = "before they sold out";
+
+    $master_store->set_fetch_attributes('uid', "annotation ($entry $attrib)");
+    $replica_store->set_fetch_attributes('uid', "annotation ($entry $attrib)");
+
+    my %mexp;
+    my %rexp;
+
+    xlog "Append two messages and store an annotation";
+    $mexp{A} = $self->make_message('Message A', store => $master_store);
+    $mexp{B} = $self->make_message('Message B', store => $master_store);
+    $rexp{A} = $mexp{A}->clone();
+    $rexp{B} = $mexp{B}->clone();
+
+    xlog "Before replication, messages are present on the master";
+    $self->check_messages(\%mexp, store => $master_store);
+    xlog "Before replication, messages are missing from the replica";
+    $self->check_messages({}, store => $replica_store);
+
+    $self->run_replication();
+
+    xlog "After replication, messages are still present on the master";
+    $self->check_messages(\%mexp, store => $master_store);
+    xlog "After replication, messages are now present on the replica";
+    $self->check_messages(\%rexp, store => $replica_store);
+
+    xlog "Add annotations to master and SWAPPED AROUND annotations to replica";
+    # Note that we do similar operations to both sides to ensure
+    # the MODSEQ of each message and the HIGHESTMODSEQ of the mailbox
+    # are the same at both ends, so that the only way the sync client
+    # can detect the difference is via sync CRC of the annotations.
+    #
+    # Note also that we carefully avoid using set_msg_annotation() here
+    # because it's important that all the STOREs happen in the same
+    # UNIX second (to avoid the sync CRC being spuriously different).
+    my $master_talk = $master_store->get_client();
+    my $replica_talk = $replica_store->get_client();
+    my $nretries = 0;
+    for (;;)
+    {
+	my $before = POSIX::time();
+	$master_talk->store('1', 'annotation', [$entry, [$attrib, { Quote => $value1 }]]);
+	$replica_talk->store('1', 'annotation', [$entry, [$attrib, { Quote => $value2 }]]);
+	$master_talk->store('2', 'annotation', [$entry, [$attrib, { Quote => $value2 }]]);
+	$replica_talk->store('2', 'annotation', [$entry, [$attrib, { Quote => $value1 }]]);
+	my $after = POSIX::time();
+	last if ($before == $after);
+	xlog "Woops, STOREs spanned a UNIX second ($before -> $after), retrying";
+	$nretries++;
+	$self->assert($nretries < 10);
+    }
+
+    $mexp{A}->set_annotation($entry, $attrib, $value1);
+    $rexp{A}->set_annotation($entry, $attrib, $value2);
+    $mexp{B}->set_annotation($entry, $attrib, $value2);
+    $rexp{B}->set_annotation($entry, $attrib, $value1);
+    $self->check_messages(\%mexp, store => $master_store);
+    $self->check_messages(\%rexp, store => $replica_store);
+
+    # At this point, the sync CRC will be different between master
+    # and replica iff the sync CRC calculation for annotations
+    # includes the UID.
+
+    $self->run_replication();
+
+    xlog "After replication, messages and annots are still present on the master";
+    $self->check_messages(\%mexp, store => $master_store);
+    xlog "After replication, messages are still present and";
+    xlog "annots are the right way around on the replica";
+    $self->check_messages(\%mexp, store => $replica_store);
+}
+
 sub test_msg_sort_order
 {
     my ($self) = @_;
