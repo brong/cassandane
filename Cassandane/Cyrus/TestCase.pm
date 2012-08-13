@@ -52,6 +52,7 @@ use lib '.';
 use base qw(Cassandane::Unit::TestCase);
 use Cassandane::Util::Log;
 use Cassandane::Util::Words;
+use Cassandane::Util::Wait;
 use Cassandane::Generator;
 use Cassandane::MessageStoreFactory;
 use Cassandane::Instance;
@@ -677,6 +678,8 @@ sub tear_down
     $self->{backend1_store} = undef;
     $self->{backend1_adminstore} = undef;
 
+    $self->replication_stop();
+
     if (defined $self->{instance})
     {
 	$self->{instance}->stop();
@@ -946,12 +949,72 @@ sub run_replication
     $run_options{cyrus} = 1;
     $run_options{handlers} = $handlers if defined $handlers;
     $run_options{redirects} = $redirects if defined $redirects;
-    $self->{instance}->run_command(\%run_options, @cmd);
+    if (defined $rolling)
+    {
+        $run_options{background} = 1;
+        $self->{sync_client_pid} = $self->{instance}->run_command(\%run_options, @cmd);
+        xlog "sync_client is running as pid $self->{sync_client_pid}";
+    }
+    else
+    {
+        $self->{instance}->run_command(\%run_options, @cmd);
+    }
 
     $self->_reconnect_all();
 }
 
-sub check_replication {
+sub _replication_is_pending
+{
+    my ($self) = @_;
+
+    my $logdir = $self->{instance}->{basedir} . "/conf/sync";
+    opendir LOGDIR, $logdir
+        or return 0;
+    my $found = 0;
+    while (my $e = readdir(LOGDIR))
+    {
+        if ($e eq 'log' || $e =~ m/^log-\d+$/)
+        {
+            $found = 1;
+            last;
+        }
+    }
+    closedir LOGDIR;
+    return $found;
+}
+
+sub replication_wait
+{
+    my ($self) = @_;
+
+    return if (!defined $self->{sync_client_pid});
+
+    xlog "Waiting for sync_client $self->{sync_client_pid} to catch up";
+
+    # Disconnect during replication to ensure no imapd
+    # is locking the mailbox, which deadlocks the tests.
+    $self->_disconnect_all();
+
+    timed_wait(sub { return !$self->_replication_is_pending(); },
+                description => "rolling replication to be finished");
+
+    $self->_reconnect_all();
+}
+
+sub replication_stop
+{
+    my ($self) = @_;
+
+    if (defined $self->{sync_client_pid})
+    {
+        xlog "Stopping sync client pid $self->{sync_client_pid}";
+        $self->{instance}->stop_command($self->{sync_client_pid});
+        $self->{sync_client_pid} = undef;
+    }
+}
+
+sub check_replication
+{
     my ($self, $user) = @_;
 
     my $CR = Cyrus::CheckReplication->new(

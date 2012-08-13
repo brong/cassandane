@@ -569,6 +569,7 @@ sub _build_skeleton
 	'conf/log/cassandane',
 	'conf/log/postman',
 	'conf/log/repluser',
+	'conf/sync',
 	'lock',
 	'data',
 	'meta',
@@ -1595,7 +1596,6 @@ sub _handle_wait_status
 {
     my ($self, $key) = @_;
     my $status = $?;
-
     my $child = delete $self->{_children}->{$key};
 
     if (WIFSIGNALED($status))

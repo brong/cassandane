@@ -809,4 +809,52 @@ sub test_replication_mailbox_new_enough
     $self->run_replication(mailbox => $mailbox12);
 }
 
+sub config_rolling
+{
+    my ($self, $conf) = @_;
+    xlog "Setting sync_log = yes";
+    $conf->set(sync_log => 'yes');
+}
+
+sub test_rolling
+{
+    my ($self) = @_;
+
+    xlog "Test replication rolling mode";
+
+    my $master_store = $self->{master_store};
+    my $replica_store = $self->{replica_store};
+
+    $self->run_replication(rolling => 1);
+
+    my %exp;
+    xlog "master should have no messages";
+    $self->check_messages(\%exp, store => $master_store);
+    xlog "replica should have no messages";
+    $self->check_messages(\%exp, store => $replica_store);
+
+    xlog "appending a message";
+    $exp{A} = $self->make_message("Message A", store => $master_store);
+
+    $self->replication_wait();
+
+    xlog "master should have message A";
+    $self->check_messages(\%exp, store => $master_store);
+    xlog "replica should also have message A";
+    $self->check_messages(\%exp, store => $replica_store);
+
+    xlog "appending some more messages";
+    $exp{B} = $self->make_message("Message B", store => $master_store);
+    $exp{C} = $self->make_message("Message C", store => $master_store);
+    $exp{D} = $self->make_message("Message D", store => $master_store);
+
+    $self->replication_wait();
+
+    xlog "master should have messages A..D";
+    $self->check_messages(\%exp, store => $master_store);
+    xlog "replica should also have message A..D";
+    $self->check_messages(\%exp, store => $replica_store);
+}
+
+
 1;
