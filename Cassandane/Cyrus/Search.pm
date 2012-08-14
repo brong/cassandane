@@ -704,4 +704,99 @@ sub prefilter_test_common
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
 }
 
+sub rolling_test_common
+{
+    my ($self, $dumper) = @_;
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start');
+    $self->{sync_client_pid} = $self->{instance}->run_command(
+		    { cyrus => 1, background => 1},
+		    'squatter', '-v', '-R', '-f');
+
+    xlog "appending a message";
+    my %exp;
+    $exp{1} = $self->make_message("Message A");
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    $self->replication_wait('squatter');
+
+    xlog "Indexer should have indexed the message";
+    $res = $dumper->($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1
+		}
+	    }
+	}, $res);
+
+    xlog "Add some more messages";
+    my $N1 = 10;
+    for (2..$N1)
+    {
+	$exp{$_} = $self->make_message("Message $_");
+    }
+
+    $self->replication_wait('squatter');
+    sleep(8);
+
+    xlog "Indexer should have indexed the new messages";
+    $res = $dumper->($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..$N1)
+		}
+	    }
+	}, $res);
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
+}
+
+sub config_rolling_squat
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=squat";
+    $conf->set(search_engine => 'squat');
+    xlog "Setting sync_log = yes";
+    $conf->set(sync_log => 'yes');
+    xlog "Setting sync_log_channels = squatter";
+    $conf->set(sync_log_channels => 'squatter');
+}
+
+sub test_rolling_squat
+{
+    my ($self) = @_;
+
+    xlog "test squatter rolling mode with Squat";
+    $self->rolling_test_common(\&squat_dump);
+}
+
+sub config_rolling_sphinx
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+    xlog "Setting sync_log = yes";
+    $conf->set(sync_log => 'yes');
+    xlog "Setting sync_log_channels = squatter";
+    $conf->set(sync_log_channels => 'squatter');
+}
+
+sub test_rolling_sphinx
+{
+    my ($self) = @_;
+
+    xlog "test squatter rolling mode with Sphinx";
+    $self->rolling_test_common(\&sphinx_dump);
+}
+
 1;

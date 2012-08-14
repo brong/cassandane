@@ -965,9 +965,10 @@ sub run_replication
 
 sub _replication_is_pending
 {
-    my ($self) = @_;
+    my ($self, $channel) = @_;
 
     my $logdir = $self->{instance}->{basedir} . "/conf/sync";
+    $logdir .= "/$channel" if defined $channel;
     opendir LOGDIR, $logdir
         or return 0;
     my $found = 0;
@@ -985,18 +986,18 @@ sub _replication_is_pending
 
 sub replication_wait
 {
-    my ($self) = @_;
+    my ($self, $channel) = @_;
 
     return if (!defined $self->{sync_client_pid});
 
-    xlog "Waiting for sync_client $self->{sync_client_pid} to catch up";
+    xlog "Waiting for sync log channel to drain";
 
     # Disconnect during replication to ensure no imapd
     # is locking the mailbox, which deadlocks the tests.
     $self->_disconnect_all();
 
-    timed_wait(sub { return !$self->_replication_is_pending(); },
-                description => "rolling replication to be finished");
+    timed_wait(sub { return !$self->_replication_is_pending($channel); },
+		description => "rolling replication to be finished");
 
     $self->_reconnect_all();
 }
