@@ -798,4 +798,50 @@ sub test_rolling_sphinx
     $self->rolling_test_common(\&sphinx_dump);
 }
 
+sub config_8bit_sphinx
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+}
+
+sub test_8bit_sphinx
+{
+    my ($self) = @_;
+
+    xlog "test indexing 8bit characters with Sphinx";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
+    xlog "append a message";
+    my %exp;
+    $exp{A} = $self->make_message("Message A",
+				  mime_charset => 'iso-8859-1',
+				  mime_encoding => '8bit',
+				  # U+00E9 normalises to lowercase e
+				  # U+00F4 normalises to lowercase o
+				  body => "H\xe9llo W\xf4rld\r\n");
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Run the indexer";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check that the terms got indexed";
+    my $res;
+    $res = index_dump($self->{instance}, '-vv', '-e', 'body:hello', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+    $res = index_dump($self->{instance}, '-vv', '-e', 'body:world', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+    $res = index_dump($self->{instance}, '-vv', '-e', 'body:quinoa', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { } }, $res);
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
+}
+
 1;
