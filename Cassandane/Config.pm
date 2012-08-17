@@ -72,7 +72,7 @@ sub default
 	    defaultpartition => 'default',
             defaultdomain => 'defdomain',
 	    'partition-default' => '@basedir@/data',
-	    sasl_mech_list => 'PLAIN LOGIN',
+	    sasl_mech_list => 'PLAIN LOGIN DIGEST-MD5',
 	    allowplaintext => 'yes',
 	    # config options used at FastMail - may as well be testing our stuff
 	    expunge_mode => 'delayed',

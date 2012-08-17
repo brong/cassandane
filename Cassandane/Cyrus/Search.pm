@@ -200,7 +200,7 @@ sub sphinx_dump
     my ($instance, $mbox) = @_;
 
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
-    my $sock = $instance->{basedir} . '/conf/sphinx/searchd.sock';
+    my $sock = $instance->{basedir} . '/conf/socket/sphinx.cassandane';
 
     $instance->run_command(
 	    { redirects => { stdout => $filename } },
@@ -257,8 +257,7 @@ sub squatter_test_common
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start');
-
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     xlog "append some messages";
     my %exp;
     my $N1 = 10;
@@ -310,7 +309,7 @@ sub squatter_test_common
 	    }
 	}, $res);
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub config_prefilter_squat
@@ -392,7 +391,7 @@ sub prefilter_test_common
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start');
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
 
     xlog "append some messages";
     # data thanks to hipsteripsum.me
@@ -701,7 +700,7 @@ sub prefilter_test_common
 	}, $res);
     }
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub rolling_test_common
@@ -714,7 +713,7 @@ sub rolling_test_common
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start');
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     $self->{sync_client_pid} = $self->{instance}->run_command(
 		    { cyrus => 1, background => 1},
 		    'squatter', '-v', '-R', '-f');
@@ -758,7 +757,7 @@ sub rolling_test_common
 	    }
 	}, $res);
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop');
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub config_rolling_squat
