@@ -845,4 +845,77 @@ sub test_8bit_sphinx
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
+sub config_sphinx_query_limit
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+}
+
+# This not really a test, it checks to see what the
+# effecive limit on message size is when indexing to
+# Sphinx.  If you're wondering, it was 8291049.
+sub XXXtest_sphinx_query_limit
+{
+    my ($self) = @_;
+
+    xlog "test the maximum size of an SQL query in Sphinx";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
+
+    my $lo = 1;
+    my $hi = undef;
+    my $uid = 1;
+    my $size;
+
+    while (!defined $hi || $hi > $lo+1)
+    {
+	my $mid;
+	if (defined $hi)
+	{
+	    $mid = int(($lo + $hi)/2);
+	    xlog "lo=$lo hi=$hi mid=$mid";
+	}
+	else
+	{
+	    $mid = 2*$lo;
+	    xlog "lo=$lo hi=undef mid=$mid";
+	}
+	xlog "Append a message with $mid extra lines";
+
+	my $msg = $self->make_message("Message $uid", extra_lines => $mid);
+	xlog "Check the messages got there";
+	$self->check_messages({ $uid => $msg });
+
+	xlog "Run the indexer";
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+	my $res = sphinx_dump($self->{instance}, $mboxname);
+	if (defined $res->{$mboxname}->{$uidvalidity}->{$uid})
+	{
+	    xlog "Successfully indexed";
+	    $lo = $mid;
+	    $size = length($msg);
+	}
+	else
+	{
+	    xlog "Failed to index";
+	    $hi = $mid;
+	}
+	$talk->store($uid, '+flags', '(\\Deleted)');
+	$talk->expunge();
+	$uid++;
+    }
+
+    xlog "Final size is $size";
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
+}
+
 1;
