@@ -237,6 +237,8 @@ sub config_squatter_sphinx
     my ($self, $conf) = @_;
     xlog "Setting search_engine=sphinx";
     $conf->set(search_engine => 'sphinx');
+
+    $conf->set(search_batchsize => '3');
 }
 
 sub test_squatter_sphinx
@@ -833,7 +835,6 @@ sub test_8bit_sphinx
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check that the terms got indexed";
-    my $res;
     $res = index_dump($self->{instance}, '-vv', '-e', 'body:hello', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
     $res = index_dump($self->{instance}, '-vv', '-e', 'body:world', $mboxname);

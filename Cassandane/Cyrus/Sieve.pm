@@ -1088,4 +1088,48 @@ EOF
     $self->assert_num_equals(1, $imaptalk->get_response_code('exists'));
 }
 
+sub test_long_header_field
+{
+    my ($self) = @_;
+
+    xlog "Testing a very long header field";
+
+    my $svc = $self->{instance}->get_service('imap');
+    $self->{store} = $svc->create_store(username => 'cassandane');
+    $self->{store}->set_fetch_attributes('uid');
+    my $imaptalk = $self->{store}->get_client();
+
+    xlog "Create the target folder";
+    my $target = $self->{instance}->mboxname('inbox', 'keffiyeh');
+    $imaptalk->create($target)
+	 or die "Cannot create $target: $@";
+
+    # Handcrafted From: address to match the rule
+    my $from = 'Cosby <etsy@quinoa.com>';
+    # Handcrafted evil To: address
+    my $to = '';
+    map { $to .= 'B' } (1..1040);
+    $to .= '@b.com';
+
+    xlog "Install the sieve script";
+    $self->install_sieve_script(<<EOF
+require ["fileinto"];
+if header :contains "From" "etsy" {
+    fileinto "keffiyeh";
+    stop;
+}
+EOF
+    );
+
+    xlog "Deliver a message with a very long To: header field";
+    my $msg = $self->{gen}->generate(subject => "Message 1",
+				     from => $from,
+				     to => $to);
+    $self->{instance}->deliver($msg);
+
+    xlog "Check that the message made it to the target folder";
+    $self->{store}->set_folder($target);
+    $self->check_messages({ 1 => $msg }, check_guid => 0);
+}
+
 1;
