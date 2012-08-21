@@ -918,4 +918,100 @@ sub XXXtest_sphinx_query_limit
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
+sub config_sphinx_large_query
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+}
+
+# make a string which uniquely represents a number
+# but without being numeric, just to make sure it
+# will get indexed.
+sub encode_number
+{
+    my ($n) = @_;
+    my @digits = ('alpha', 'beta', 'gamma', 'delta', 'epsilon',
+		  'zeta', 'eta', 'theta', 'iota', 'kappa');
+    my $s = '';
+
+    return $digits[0] if !$n;
+
+    while ($n) {
+	$s = $digits[$n % 10] . "$s";
+	$n = int($n / 10);
+    }
+    return $s;
+}
+
+sub test_sphinx_large_query
+{
+    my ($self) = @_;
+
+    xlog "test truncation of large messages";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
+
+    xlog "Append a message which is large but below the limit";
+    my %exp;
+    my $body = '';
+    my $n = 0;
+    while (length($body) < 3*1024*1024)
+    {
+	$body .= encode_number($n) . "\r\n";
+	$n++;
+    }
+    my $untruncated_n = $n-1;
+    $exp{1} = $self->make_message("Message 1", body => $body);
+
+    xlog "Append a message which is definitely over the limit";
+    while (length($body) < 6*1024*1024)
+    {
+	$body .= encode_number($n) . "\r\n";
+	$n++;
+    }
+    my $truncated_n = $n-1;
+    $exp{2} = $self->make_message("Message 2", body => $body);
+
+    xlog "Check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Run the indexer";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check that both messages were indexed";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1,
+		    2 => 1,
+		}
+	    }
+	}, $res);
+
+    xlog "Check that the untruncated text is found for both messages";
+    $res = index_dump($self->{instance}, '-vv', '-e',
+		      'body:' .  encode_number($untruncated_n), $mboxname);
+    $self->assert_deep_equals({
+	$mboxname => {
+	    1 => 1,
+	    2 => 1
+	}
+    }, $res);
+
+    xlog "Check that the truncated text is not found";
+    $res = index_dump($self->{instance}, '-vv', '-e',
+		      'body:' .  encode_number($truncated_n), $mboxname);
+    $self->assert_deep_equals({ $mboxname => { } }, $res);
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
+}
+
 1;
