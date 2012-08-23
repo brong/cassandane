@@ -389,6 +389,61 @@ sub xconvfetch_end
     $self->{fetched} = undef;
 }
 
+sub xconvmultisort
+{
+    my ($self, %params) = @_;
+    # "xconvmultisort" sort-criteria windowargs charset search-criteria
+    $params{sort} ||= [ 'uid' ];
+    $params{charset} ||= 'utf8';
+    $params{windowargs} ||= [ ];
+    $params{search} ||= [ 'all' ];
+    my @args = (
+	[ @{$params{sort}} ],
+	[ @{$params{windowargs}} ],
+	$params{charset},
+	@{$params{search}}
+    );
+
+    my $results = {};
+    my $handlers =
+    {
+	xconvmulti => sub
+	{
+	    # expecting: * XCONVMULTI (folder0 folder1) ((0 1) (0 2) (1 1))
+	    my ($response, $rr) = @_;
+	    #xlog "XXX XCONVMULTI response=$response rr=" .  Data::Dumper::Dumper($rr);
+	    my $folders = $rr->[0];
+	    my $tuples = $rr->[1];
+	    foreach my $tuple (@$tuples)
+	    {
+		my $folder = $folders->[$tuple->[0]];
+		my $uid = 0 + $tuple->[1];
+		$results->{xconvmulti} ||= {};
+		$results->{xconvmulti}->{$folder} ||= [];
+		push(@{$results->{xconvmulti}->{$folder}}, $uid);
+	    }
+	},
+	total => sub
+	{
+	    my ($response, $rr) = @_;
+	    $results->{total} = 0 + $rr->[0];
+	},
+	highestmodseq => sub
+	{
+	    my ($response, $rr) = @_;
+	    $results->{highestmodseq} = 0 + $rr->[0];
+	},
+    };
+
+    $self->connect();
+
+    $self->{client}->_imap_cmd("xconvmultisort", 0, $handlers, @args)
+	or return undef;
+
+    return $results;
+}
+
+
 #
 # Begin idling.  Sends the IDLE command and waits for the server to
 # respond with the "+ idling" response.  Returns undef and sets $@

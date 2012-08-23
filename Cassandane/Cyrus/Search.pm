@@ -1111,4 +1111,139 @@ sub test_prefilter_multi
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
+sub config_xconvmultisort
+{
+    my ($self, $conf) = @_;
+    #
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+    xlog "Setting conversations=on";
+    $conf->set(conversations => 'on',
+	       conversations_db => 'twoskip');
+    # XCONVMULTISORT only works on Sphinx anyway
+}
+
+sub test_xconvmultisort
+{
+    my ($self) = @_;
+
+    xlog "test the XCONVMULTISORT command";
+    # Note, Squat does not support multiple folder searching
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    my @folders = ( 'kale', 'tofu', 'smallbatch' );
+
+    xlog "create folders";
+    foreach my $folder (@folders)
+    {
+	$talk->create("$mboxname.$folder")
+	    or die "Cannot create folder $mboxname.$folder: $@";
+    }
+
+    xlog "start the sphinx daemon";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
+
+    xlog "append some messages";
+    my $exp = {};
+    map { $exp->{$_} = {}; } @folders;
+    my $uid = 1;
+    my $hms = 6;
+    my $folderidx = 0;
+    foreach my $d (@filter_data)
+    {
+	my $folder = $folders[$folderidx];
+	$self->{store}->set_folder("$mboxname.$folder");
+	$exp->{$folder}->{$uid} = $self->make_filter_message($d, $uid);
+
+	$folderidx++;
+	if ($folderidx >= scalar(@folders)) {
+	    $folderidx = 0;
+	    $uid++;
+	}
+	$hms++;
+    }
+
+    xlog "check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$mboxname.$folder");
+	$self->check_messages($exp->{$folder});
+    }
+
+    xlog "Index the messages";
+    foreach my $folder (@folders)
+    {
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname.$folder");
+    }
+
+    xlog "Check the results of the index run";
+    foreach my $t (@filter_tests)
+    {
+	xlog "Testing query \"$t->{query}\"";
+
+	my @search;
+	if ($t->{query} =~ m/header:/)
+	{
+	    # no direct equivalent
+	    next;
+	}
+	elsif ($t->{query} =~ m/^__begin:and/)
+	{
+	    @search = split(/\s+/, $t->{query});
+	    shift(@search);
+	    pop(@search);
+	    @search = map { ('text', $_) } @search;
+	}
+	elsif ($t->{query} =~ m/^__begin:or/)
+	{
+	    my @s = split(/\s+/, $t->{query});
+	    shift(@s);
+	    pop(@s);
+	    @search = ( 'text', shift(@s) );
+	    foreach my $t (@s)
+	    {
+		@search = ('or', 'text', $t, @search);
+	    }
+	}
+	elsif ($t->{query} =~ m/:/)
+	{
+	    # transform 'from:foo' into 'from' 'foo'
+	    @search = split(/:/, $t->{query});
+	}
+	else
+	{
+	    @search = ( 'text', $t->{query} );
+	}
+
+	$res = $self->{store}->xconvmultisort(search => [ @search ]);
+	xlog "res = " . Dumper($res);
+
+	my $exp = {
+	    highestmodseq => $hms,
+	    total => scalar(@{$t->{expected}})
+	};
+	foreach my $i (@{$t->{expected}})
+	{
+	    my $folder = "INBOX." . $folders[($i-1) % scalar(@folders)];
+	    my $uid = int(($i-1) / scalar(@folders)) + 1;
+	    $exp->{xconvmulti} ||= {};
+	    $exp->{xconvmulti}->{$folder} ||= [];
+	    push(@{$exp->{xconvmulti}->{$folder}}, $uid);
+	}
+	xlog "expecting " . Data::Dumper::Dumper($exp);
+
+	$self->assert_deep_equals($exp, $res);
+    }
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
+}
+
 1;
