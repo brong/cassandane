@@ -46,6 +46,7 @@ use Cwd qw(abs_path);
 use DateTime;
 use POSIX qw(:errno_h);
 use Cassandane::Util::Log;
+use Cassandane::Util::Wait;
 use Data::Dumper;
 
 use lib '.';
@@ -208,7 +209,7 @@ sub sphinx_dump
 	    '--socket', $sock,
 	    '--batch',
 	    '--raw',
-	    '-e', 'SELECT cyrusid FROM rt'
+	    '-e', 'SELECT cyrusid FROM rt LIMIT 1000'
 	    );
 
     my $res = {};
@@ -1242,6 +1243,129 @@ sub test_xconvmultisort
 
 	$self->assert_deep_equals($exp, $res);
     }
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
+}
+
+sub config_iris1936
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+
+    $conf->set(search_batchsize => '3');
+}
+
+sub test_iris1936
+{
+    my ($self) = @_;
+
+    xlog "Regression test for IRIS-1936, where squatter with Sphinx";
+    xlog "would loop forever multiply indexing the first 20 messages";
+    xlog "in a mailbox which was the 21st mailbox with the same";
+    xlog "uidvalidity";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
+
+    xlog "create some folders";
+    my $lastuidv;
+    my @folders;
+    my $n = 0;
+    while (scalar @folders < 21)
+    {
+	my $folder = $mboxname . '.' . encode_number($n);
+	$talk->create($folder)
+	    or die "Cannot create folder $folder: $@";
+	my $res = $talk->status($folder, ['uidvalidity']);
+	my $uidv = $res->{uidvalidity};
+	if (!defined $lastuidv || $lastuidv == $uidv)
+	{
+	    push(@folders, $folder);
+	}
+	else
+	{
+	    @folders = ();
+	}
+	$lastuidv = $uidv;
+
+	# avoid looping forever if creation is too slow
+	$n++;
+	die "Cannot create folders fast enough to setup test"
+	    if ($n > 50);
+    }
+
+    xlog "Usable folders: " . join(' ', @folders);
+
+    xlog "Append one message to each folder";
+    my %exp;
+    my $res;
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder($folder);
+	$self->{gen}->set_next_uid(1);
+	$exp{$folder} ||= {};
+	$exp{$folder}->{1} = $self->make_message("Message 1");
+    }
+
+    xlog "Append more than one batch's worth to the 21st folder";
+    my $folder = $folders[20];
+    $self->{store}->set_folder($folder);
+    $self->{gen}->set_next_uid(2);
+    foreach my $uid (2..6)
+    {
+	$exp{$folder}->{$uid} = $self->make_message("Message $uid");
+    }
+
+    xlog "Check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder($folder);
+	$self->check_messages($exp{$folder});
+    }
+
+    xlog "Index run on first 20 folders";
+    foreach (0..19)
+    {
+	$folder = $folders[$_];
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $folder);
+    }
+
+    xlog "Index run on 21st folder; will loop if the bug is present";
+    $folder = $folders[20];
+    my $pid = $self->{instance}->run_command(
+				{ cyrus => 1, background => 1 },
+			       'squatter', '-ivv', $folder);
+    eval
+    {
+	timed_wait(sub {
+	    # nonblock waitpid()
+	    my $r = $self->{instance}->reap_command($pid, 1);
+	    defined $r && $r == 0;
+	}, description => "squatter to finish indexing $folder");
+    };
+    my $ex = $@;
+    if ($ex)
+    {
+	xlog "Timed out, the test has FAILED";
+	$self->{instance}->stop_command($pid);
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
+	die $ex;
+    }
+    xlog "Finished normally, yay";
+
+    xlog "Check the results of the index runs";
+    my $iexp = {};
+    foreach (0..19)
+    {
+	$folder = $folders[$_];
+	$iexp->{$folder} = { $lastuidv => { 1 => 1 } };
+    }
+    $folder = $folders[20];
+    $iexp->{$folder} = { $lastuidv => { map { $_ => 1 } (1..6) } };
+    $self->assert_deep_equals($iexp, sphinx_dump($self->{instance}));
 
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }

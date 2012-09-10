@@ -1392,13 +1392,13 @@ sub run_command
 
 sub reap_command
 {
-    my ($self, $pid) = @_;
+    my ($self, $pid, $nonblocking) = @_;
 
     # parent process...wait for child
-    my $child = waitpid($pid, 0);
+    my $child = waitpid($pid, ($nonblocking ? WNOHANG : 0));
     # and deal with it's exit status
     return $self->_handle_wait_status($pid)
-	if $child == $pid;
+	if defined $child && $child == $pid;
     return undef;
 }
 
