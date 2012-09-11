@@ -1370,4 +1370,45 @@ sub test_iris1936
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
+sub config_squatter_null_multipart
+{
+    my ($self, $conf) = @_;
+    xlog "Setting search_engine=sphinx";
+    $conf->set(search_engine => 'sphinx');
+}
+
+sub test_squatter_null_multipart
+{
+    my ($self) = @_;
+
+    xlog "Regression test for one of the bugs in IRIS-1912; reading the";
+    xlog "BODYSTRUCTURE cache for a message with content-type=multipart/whatever";
+    xlog "but no parts at all, which is illegal according to RFC2046 but";
+    xlog "has been seen in the wild";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
+    xlog "append a message";
+    my %exp;
+    $exp{1} = $self->make_message("Message 1",
+				  mime_type => 'multipart/alternative',
+				  body => '');
+    xlog "check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
+}
+
 1;
