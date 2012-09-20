@@ -1346,6 +1346,13 @@ sub deliver
     }, @cmd);
 }
 
+sub _setup_for_search
+{
+    my ($self, $engine) = @_;
+
+    $self->{config}->set(search_engine => $engine);
+}
+
 # Runs a command with the given arguments.  The first argument is an
 # options hash:
 #

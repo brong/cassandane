@@ -53,6 +53,9 @@ use lib '.';
 use base qw(Cassandane::Cyrus::TestCase);
 use Cassandane::Util::Log;
 
+Cassandane::Cyrus::TestCase::magic(sphinx => sub { shift->want(search => 'sphinx'); });
+Cassandane::Cyrus::TestCase::magic(squat => sub { shift->want(search => 'squat'); });
+
 sub new
 {
     my $class = shift;
@@ -181,13 +184,6 @@ sub squat_dump
     return $res;
 }
 
-sub config_squatter_squat
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=squat";
-    $conf->set(search_engine => 'squat');
-}
-
 sub test_squatter_squat
 {
     my ($self) = @_;
@@ -236,9 +232,7 @@ sub sphinx_dump
 sub config_squatter_sphinx
 {
     my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-
+    xlog "Setting search_batchsize=3";
     $conf->set(search_batchsize => '3');
 }
 
@@ -315,26 +309,12 @@ sub squatter_test_common
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_prefilter_squat
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=squat";
-    $conf->set(search_engine => 'squat');
-}
-
 sub test_prefilter_squat
 {
     my ($self) = @_;
 
     xlog "test squatter with Squat";
     $self->prefilter_test_common();
-}
-
-sub config_prefilter_sphinx
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
 }
 
 sub test_prefilter_sphinx
@@ -778,8 +758,6 @@ sub rolling_test_common
 sub config_rolling_squat
 {
     my ($self, $conf) = @_;
-    xlog "Setting search_engine=squat";
-    $conf->set(search_engine => 'squat');
     xlog "Setting sync_log = yes";
     $conf->set(sync_log => 'yes');
     xlog "Setting sync_log_channels = squatter";
@@ -797,8 +775,6 @@ sub test_rolling_squat
 sub config_rolling_sphinx
 {
     my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
     xlog "Setting sync_log = yes";
     $conf->set(sync_log => 'yes');
     xlog "Setting sync_log_channels = squatter";
@@ -811,13 +787,6 @@ sub test_rolling_sphinx
 
     xlog "test squatter rolling mode with Sphinx";
     $self->rolling_test_common(\&sphinx_dump);
-}
-
-sub config_8bit_sphinx
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
 }
 
 sub test_8bit_sphinx
@@ -856,13 +825,6 @@ sub test_8bit_sphinx
     $self->assert_deep_equals({ $mboxname => { } }, $res);
 
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
-}
-
-sub config_sphinx_query_limit
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
 }
 
 # This not really a test, it checks to see what the
@@ -929,13 +891,6 @@ sub XXXtest_sphinx_query_limit
     xlog "Final size is $size";
 
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
-}
-
-sub config_sphinx_large_query
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
 }
 
 # make a string which uniquely represents a number
@@ -1027,14 +982,7 @@ sub test_sphinx_large_query
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_prefilter_multi
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-}
-
-sub test_prefilter_multi
+sub test_sphinx_prefilter_multi
 {
     my ($self) = @_;
 
@@ -1112,19 +1060,17 @@ sub test_prefilter_multi
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_xconvmultisort
+sub config_sphinx_xconvmultisort
 {
     my ($self, $conf) = @_;
-    #
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
+
     xlog "Setting conversations=on";
     $conf->set(conversations => 'on',
 	       conversations_db => 'twoskip');
     # XCONVMULTISORT only works on Sphinx anyway
 }
 
-sub test_xconvmultisort
+sub test_sphinx_xconvmultisort
 {
     my ($self) = @_;
 
@@ -1247,16 +1193,13 @@ sub test_xconvmultisort
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_iris1936
+sub config_sphinx_iris1936
 {
     my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-
     $conf->set(search_batchsize => '3');
 }
 
-sub test_iris1936
+sub test_sphinx_iris1936
 {
     my ($self) = @_;
 
@@ -1370,14 +1313,7 @@ sub test_iris1936
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_squatter_null_multipart
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-}
-
-sub test_squatter_null_multipart
+sub test_sphinx_null_multipart
 {
     my ($self) = @_;
 
@@ -1411,14 +1347,7 @@ sub test_squatter_null_multipart
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_squatter_trivial_multipart
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-}
-
-sub test_squatter_trivial_multipart
+sub test_sphinx_trivial_multipart
 {
     my ($self) = @_;
 
@@ -1458,14 +1387,7 @@ sub test_squatter_trivial_multipart
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_squatter_single_multipart
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-}
-
-sub test_squatter_single_multipart
+sub test_sphinx_single_multipart
 {
     my ($self) = @_;
 
@@ -1510,14 +1432,7 @@ sub test_squatter_single_multipart
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
-sub config_squatter_null_text
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_engine=sphinx";
-    $conf->set(search_engine => 'sphinx');
-}
-
-sub test_squatter_null_text
+sub test_sphinx_null_text
 {
     my ($self) = @_;
 

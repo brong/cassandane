@@ -99,6 +99,7 @@ sub new
 	adminstore => 0,
 	gen => 1,
 	deliver => 0,
+	search => 0,
     };
     map {
 	$want->{$_} = delete $params->{$_}
@@ -357,6 +358,8 @@ sub _create_instances
 	$instance_params{description} = "main instance for test $self->{_name}";
 	$self->{instance} = Cassandane::Instance->new(%instance_params);
 	$self->{instance}->add_services(@{$want->{services}});
+	$self->{instance}->_setup_for_search($want->{search})
+	    if $want->{search};
 	$self->{instance}->_setup_for_deliver()
 	    if ($want->{deliver});
 
@@ -381,6 +384,8 @@ sub _create_instances
 		$self->{replica}->add_service(name => 'sync', port => $sync_port);
 	    }
 	    $self->{replica}->add_services(@{$want->{services}});
+	    $self->{replica}->_setup_for_search($want->{search})
+		if $want->{search};
 	    $self->{replica}->_setup_for_deliver()
 		if ($want->{deliver});
 	}
