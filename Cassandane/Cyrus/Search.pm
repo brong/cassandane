@@ -59,7 +59,7 @@ Cassandane::Cyrus::TestCase::magic(squat => sub { shift->want(search => 'squat')
 sub new
 {
     my $class = shift;
-    return $class->SUPER::new({}, @_);
+    return $class->SUPER::new({ adminstore => 1 }, @_);
 }
 
 sub set_up
@@ -197,7 +197,12 @@ sub sphinx_dump
     my ($instance, $mbox) = @_;
 
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
-    my $sock = $instance->{basedir} . '/conf/socket/sphinx.cassandane';
+
+    my $user;
+    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
+    $user ||= 'cassandane';
+
+    my $sock = $instance->{basedir} . "/conf/socket/sphinx.$user";
 
     return {} if ( ! -e $sock );
 
@@ -780,6 +785,85 @@ sub test_rolling_sphinx
 
     xlog "test squatter rolling mode with Sphinx";
     $self->rolling_test_common(\&sphinx_dump);
+}
+
+sub config_rolling_many_sphinx
+{
+    my ($self, $conf) = @_;
+    xlog "Setting sync_log = yes";
+    $conf->set(sync_log => 'yes');
+    xlog "Setting sync_log_channels = squatter";
+    $conf->set(sync_log_channels => 'squatter');
+}
+
+sub test_rolling_many_sphinx
+{
+    my ($self, $dumper) = @_;
+
+    xlog "test squatter rolling mode with Sphinx and many users";
+    xlog "which will start up several searchd instances";
+
+    my $admintalk = $self->{adminstore}->get_client();
+    my @users = ( qw(letterpress williamsburg narwhal irony
+		     hoodie brooklyn gentrify seitan
+		     quinoa bespoke forage selvage
+		     twee cray raw denim
+		     lomo) );
+
+    xlog "creating users";
+    my %uidv;
+    foreach my $user (@users)
+    {
+	$self->{instance}->create_user($user);
+	my $folder = "user." . $user;
+	my $res = $admintalk->status($folder, ['uidvalidity']);
+	$uidv{$folder} = $res->{uidvalidity};
+    }
+
+    $self->{sync_client_pid} = $self->{instance}->run_command(
+		    { cyrus => 1, background => 1},
+		    'squatter', '-v', '-R', '-f');
+
+    xlog "appending messages";
+    my $exp = {};
+    foreach my $uid (1..3)
+    {
+	foreach my $user (@users)
+	{
+	    my $folder = "user.$user";
+	    $self->{adminstore}->set_folder($folder);
+	    my $msg = $self->make_message("Message $user $uid ",
+					  store => $self->{adminstore});
+	    $msg->set_attribute(uid => $uid);
+	    $exp->{$folder} ||= {};
+	    $exp->{$folder}->{$uid} = $msg;
+	}
+    }
+
+    xlog "check the messages got there";
+    foreach my $user (@users)
+    {
+	my $folder = "user.$user";
+	xlog "folder $folder";
+	$self->{adminstore}->set_folder($folder);
+	$self->check_messages($exp->{$folder},
+			      store => $self->{adminstore},
+			      keyed_on => 'uid');
+    }
+
+    $self->replication_wait('squatter');
+
+    xlog "Indexer should have indexed the messages";
+    # Note that we have to call sphinx_dump once for each user
+    foreach my $user (@users)
+    {
+	my $folder = "user.$user";
+	xlog "folder $folder";
+	my $res = sphinx_dump($self->{instance}, $folder);
+	$self->assert_deep_equals({
+		$folder => { $uidv{$folder} => { map { $_ => 1 } (1..3) } }
+	}, $res);
+    }
 }
 
 sub test_8bit_sphinx
