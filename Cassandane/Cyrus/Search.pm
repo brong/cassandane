@@ -192,17 +192,23 @@ sub test_squatter_squat
     $self->squatter_test_common(\&squat_dump);
 }
 
-sub sphinx_dump
+sub sphinx_socket_path
 {
     my ($instance, $mbox) = @_;
-
-    my $filename = $instance->{basedir} . "/sphinx_dump.out";
 
     my $user;
     ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
     $user ||= 'cassandane';
 
-    my $sock = $instance->{basedir} . "/conf/socket/sphinx.$user";
+    return $instance->{basedir} . "/conf/socket/sphinx.$user";
+}
+
+sub sphinx_dump
+{
+    my ($instance, $mbox) = @_;
+
+    my $filename = $instance->{basedir} . "/sphinx_dump.out";
+    my $sock = sphinx_socket_path($instance, $mbox);
 
     return {} if ( ! -e $sock );
 
@@ -824,6 +830,13 @@ sub test_rolling_many_sphinx
 		    { cyrus => 1, background => 1},
 		    'squatter', '-v', '-R', '-f');
 
+    xlog "check the Sphinx sockets do no exist";
+    foreach my $user (@users)
+    {
+	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
+	die "Socket $sock exists, expecting not" if ( -e $sock );
+    }
+
     xlog "appending messages";
     my $exp = {};
     foreach my $uid (1..3)
@@ -852,6 +865,13 @@ sub test_rolling_many_sphinx
     }
 
     $self->replication_wait('squatter');
+
+    xlog "check the Sphinx sockets do exist";
+    foreach my $user (@users)
+    {
+	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
+	die "Socket $sock does not exist" if ( ! -e $sock );
+    }
 
     xlog "Indexer should have indexed the messages";
     # Note that we have to call sphinx_dump once for each user
