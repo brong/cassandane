@@ -886,6 +886,88 @@ sub test_rolling_many_sphinx
     }
 }
 
+sub config_mgr_timeout_sphinx
+{
+    my ($self, $conf) = @_;
+    xlog "Setting sync_log = yes";
+    $conf->set(sync_log => 'yes');
+    xlog "Setting sync_log_channels = squatter";
+    $conf->set(sync_log_channels => 'squatter');
+    xlog "Setting sphinxmgr_timeout = 5";
+    $conf->set(sphinxmgr_timeout => '5');
+}
+
+sub test_mgr_timeout_sphinx
+{
+    my ($self, $dumper) = @_;
+
+    xlog "test cyr_sphinxmgr starting up and shutting down a searchd";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Check the Sphinx socket does not exist";
+    my $sock = sphinx_socket_path($self->{instance}, $mboxname);
+    die "Socket $sock exists, expecting not" if ( -e $sock );
+
+    xlog "Append a message";
+    my %exp;
+    $exp{A} = $self->make_message("Message A");
+
+    xlog "Check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the message";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the Sphinx socket does exist";
+    die "Socket $sock does not exist" if ( ! -e $sock );
+
+    xlog "Indexer should have indexed the messages";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1
+		}
+	    }
+    }, $res);
+
+    xlog "searchd should quietly go away after 5-10 seconds";
+    timed_wait(sub { ( ! -e $sock ) },
+	       description => "searchd to be timed out");
+
+    xlog "Append another message";
+    $exp{B} = $self->make_message("Message B");
+
+    xlog "Check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the Sphinx socket does exist";
+    die "Socket $sock does not exist" if ( ! -e $sock );
+
+    xlog "Indexer should have indexed the messages";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1,
+		    2 => 1
+		}
+	    }
+    }, $res);
+
+    xlog "searchd should quietly go away after 5-10 seconds";
+    timed_wait(sub { ( ! -e $sock ) },
+	       description => "searchd to be timed out");
+}
+
 sub test_8bit_sphinx
 {
     my ($self) = @_;
