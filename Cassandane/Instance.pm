@@ -1350,6 +1350,18 @@ sub _setup_for_search
 {
     my ($self, $engine) = @_;
 
+    if ($engine eq 'sphinx')
+    {
+	my @flags;
+	push(@flags, '-v') if get_verbose;
+	$self->add_start(name => 'sphinxmgr',
+			 argv => [ 'cyr_sphinxmgr', @flags ]);
+    }
+    elsif ($engine ne 'squat')
+    {
+	die "Unknown search engine \"$engine\"";
+    }
+
     $self->{config}->set(search_engine => $engine);
 }
 
