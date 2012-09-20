@@ -199,6 +199,8 @@ sub sphinx_dump
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
     my $sock = $instance->{basedir} . '/conf/socket/sphinx.cassandane';
 
+    return {} if ( ! -e $sock );
+
     $instance->run_command(
 	    { redirects => { stdout => $filename } },
 	    'mysql',
@@ -254,7 +256,6 @@ sub squatter_test_common
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     xlog "append some messages";
     my %exp;
     my $N1 = 10;
@@ -306,7 +307,6 @@ sub squatter_test_common
 	    }
 	}, $res);
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub test_prefilter_squat
@@ -667,8 +667,6 @@ sub prefilter_test_common
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
-
     xlog "append some messages";
     my %exp;
     my $uid = 1;
@@ -694,8 +692,6 @@ sub prefilter_test_common
 	    }
 	}, $res);
     }
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub rolling_test_common
@@ -708,7 +704,6 @@ sub rolling_test_common
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     $self->{sync_client_pid} = $self->{instance}->run_command(
 		    { cyrus => 1, background => 1},
 		    'squatter', '-v', '-R', '-f');
@@ -751,8 +746,6 @@ sub rolling_test_common
 		}
 	    }
 	}, $res);
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub config_rolling_squat
@@ -801,7 +794,6 @@ sub test_8bit_sphinx
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     xlog "append a message";
     my %exp;
     $exp{A} = $self->make_message("Message A",
@@ -823,8 +815,6 @@ sub test_8bit_sphinx
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
     $res = index_dump($self->{instance}, '-vv', '-e', 'body:quinoa', $mboxname);
     $self->assert_deep_equals({ $mboxname => { } }, $res);
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 # This not really a test, it checks to see what the
@@ -841,8 +831,6 @@ sub XXXtest_sphinx_query_limit
 
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
 
     my $lo = 1;
     my $hi = undef;
@@ -889,8 +877,6 @@ sub XXXtest_sphinx_query_limit
     }
 
     xlog "Final size is $size";
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 # make a string which uniquely represents a number
@@ -923,8 +909,6 @@ sub test_sphinx_large_query
 
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
 
     xlog "Append a message which is large but below the limit";
     my %exp;
@@ -978,8 +962,6 @@ sub test_sphinx_large_query
     $res = index_dump($self->{instance}, '-vv', '-e',
 		      'body:' .  encode_number($truncated_n), $mboxname);
     $self->assert_deep_equals({ $mboxname => { } }, $res);
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub test_sphinx_prefilter_multi
@@ -1003,9 +985,6 @@ sub test_sphinx_prefilter_multi
 	$talk->create("$mboxname.$folder")
 	    or die "Cannot create folder $mboxname.$folder: $@";
     }
-
-    xlog "start the sphinx daemon";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
 
     xlog "append some messages";
     my $exp = {};
@@ -1056,8 +1035,6 @@ sub test_sphinx_prefilter_multi
 
 	$self->assert_deep_equals($exp, $res);
     }
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub config_sphinx_xconvmultisort
@@ -1094,9 +1071,6 @@ sub test_sphinx_xconvmultisort
 	$talk->create("$mboxname.$folder")
 	    or die "Cannot create folder $mboxname.$folder: $@";
     }
-
-    xlog "start the sphinx daemon";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
 
     xlog "append some messages";
     my $exp = {};
@@ -1189,8 +1163,6 @@ sub test_sphinx_xconvmultisort
 
 	$self->assert_deep_equals($exp, $res);
     }
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub config_sphinx_iris1936
@@ -1210,8 +1182,6 @@ sub test_sphinx_iris1936
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
 
     xlog "create some folders";
     my $lastuidv;
@@ -1294,7 +1264,6 @@ sub test_sphinx_iris1936
     {
 	xlog "Timed out, the test has FAILED";
 	$self->{instance}->stop_command($pid);
-	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 	die $ex;
     }
     xlog "Finished normally, yay";
@@ -1309,8 +1278,6 @@ sub test_sphinx_iris1936
     $folder = $folders[20];
     $iexp->{$folder} = { $lastuidv => { map { $_ => 1 } (1..6) } };
     $self->assert_deep_equals($iexp, sphinx_dump($self->{instance}));
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub test_sphinx_null_multipart
@@ -1328,7 +1295,6 @@ sub test_sphinx_null_multipart
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     xlog "append a message";
     my %exp;
     $exp{1} = $self->make_message("Message 1",
@@ -1343,8 +1309,6 @@ sub test_sphinx_null_multipart
     xlog "Check the results of the index run";
     $res = sphinx_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub test_sphinx_trivial_multipart
@@ -1362,7 +1326,6 @@ sub test_sphinx_trivial_multipart
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     xlog "append a message";
     my %exp;
     $exp{1} = $self->make_message("Message 1",
@@ -1383,8 +1346,6 @@ sub test_sphinx_trivial_multipart
 
     $res = index_dump($self->{instance}, '-vv', '-e', 'brooklyn', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub test_sphinx_single_multipart
@@ -1402,7 +1363,6 @@ sub test_sphinx_single_multipart
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     xlog "append a message";
     my %exp;
     $exp{1} = $self->make_message("Message 1",
@@ -1428,8 +1388,6 @@ sub test_sphinx_single_multipart
 
     $res = index_dump($self->{instance}, '-vv', '-e', 'etsy', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 sub test_sphinx_null_text
@@ -1446,7 +1404,6 @@ sub test_sphinx_null_text
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'start', $mboxname);
     xlog "append a message";
     my %exp;
     $exp{1} = $self->make_message("Message 1",
@@ -1461,8 +1418,6 @@ sub test_sphinx_null_text
     xlog "Check the results of the index run";
     $res = sphinx_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
-
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-v', '-c', 'stop', $mboxname);
 }
 
 1;
