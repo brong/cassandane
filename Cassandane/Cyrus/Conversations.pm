@@ -1796,4 +1796,250 @@ sub test_bogus_in_reply_to
     $self->check_messages(\%exp);
 }
 
+sub config_counted_flags
+{
+    my ($self, $conf) = @_;
+    xlog "Setting conversations_counted_flags = '\$Cosby \$Sweater'";
+    $conf->set(conversations_counted_flags => '$Cosby $Sweater');
+}
+
+sub test_counted_flags
+{
+    my ($self) = @_;
+
+    xlog "Test counted flags";
+
+    my $store = $self->{store};
+    my $talk = $store->get_client();
+    my %exp;
+    my $res;
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+    $store->set_fetch_attributes('uid', 'cid');
+
+    xlog "Add 3 messages in one conversation";
+    $exp{A} = $self->make_message("Message A");
+    $exp{B} = $self->make_message("Re: Message A", references => [ $exp{A} ]);
+    $exp{C} = $self->make_message("Re: Re: Message A", references => [ $exp{B} ]);
+    my $cid = $exp{A}->make_cid();
+    $exp{A}->set_attributes(cid => $cid);
+    $exp{B}->set_attributes(cid => $cid);
+    $exp{C}->set_attributes(cid => $cid);
+
+    xlog "Check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Flags not configured as countable are not reported";
+    $res = $store->xconvmeta($cid, ['count', ['$Quinoa']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => []
+	    }
+	}
+    }, $res);
+
+    xlog "Flags configured as countable are reported as 0";
+    $res = $store->xconvmeta($cid, ['count', ['$Cosby']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Cosby', 0 ]
+	    }
+	}
+    }, $res);
+    $res = $store->xconvmeta($cid, ['count', ['$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Sweater', 0 ]
+	    }
+	}
+    }, $res);
+
+    xlog "We can request multiple flags at once";
+    $res = $store->xconvmeta($cid, ['count', ['$Quinoa', '$Cosby', '$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [
+		    '$Cosby', 0,
+		    '$Sweater', 0
+		]
+	    }
+	}
+    }, $res);
+
+    xlog "Set the Cosby flag on a message";
+    $talk->store(1, '+flags', ['$Cosby']);
+
+    xlog "Check only the Cosby count went up";
+    $res = $store->xconvmeta($cid, ['count', ['$Cosby']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Cosby', 1 ]
+	    }
+	}
+    }, $res);
+    $res = $store->xconvmeta($cid, ['count', ['$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Sweater', 0 ]
+	    }
+	}
+    }, $res);
+
+    xlog "We can request multiple flags at once";
+    $res = $store->xconvmeta($cid, ['count', ['$Quinoa', '$Cosby', '$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [
+		    '$Cosby', 1,
+		    '$Sweater', 0
+		]
+	    }
+	}
+    }, $res);
+
+    xlog "Set the Sweater flag on 2 messages";
+    $talk->store('2:3', '+flags', ['$Sweater']);
+
+    xlog "Check only the Sweater count went up";
+    $res = $store->xconvmeta($cid, ['count', ['$Cosby']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Cosby', 1 ]
+	    }
+	}
+    }, $res);
+    $res = $store->xconvmeta($cid, ['count', ['$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Sweater', 2 ]
+	    }
+	}
+    }, $res);
+
+    xlog "We can request multiple flags at once";
+    $res = $store->xconvmeta($cid, ['count', ['$Quinoa', '$Cosby', '$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [
+		    '$Cosby', 1,
+		    '$Sweater', 2
+		]
+	    }
+	}
+    }, $res);
+
+    xlog "Set Cosby on all 3 messages (1 already has it)";
+    $talk->store('1:3', '+flags', ['$Cosby']);
+
+    xlog "Check the Cosby count went up by the right amount";
+    $res = $store->xconvmeta($cid, ['count', ['$Cosby']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Cosby', 3 ]
+	    }
+	}
+    }, $res);
+    $res = $store->xconvmeta($cid, ['count', ['$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Sweater', 2 ]
+	    }
+	}
+    }, $res);
+
+    xlog "We can request multiple flags at once";
+    $res = $store->xconvmeta($cid, ['count', ['$Quinoa', '$Cosby', '$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [
+		    '$Cosby', 3,
+		    '$Sweater', 2
+		]
+	    }
+	}
+    }, $res);
+
+    xlog "Clear the Cosby flag on message 2";
+    $talk->store('2', '-flags', ['$Cosby']);
+
+    xlog "Check the Cosby count went down by the right amount";
+    $res = $store->xconvmeta($cid, ['count', ['$Cosby']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Cosby', 2 ]
+	    }
+	}
+    }, $res);
+    $res = $store->xconvmeta($cid, ['count', ['$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Sweater', 2 ]
+	    }
+	}
+    }, $res);
+
+    xlog "We can request multiple flags at once";
+    $res = $store->xconvmeta($cid, ['count', ['$Quinoa', '$Cosby', '$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [
+		    '$Cosby', 2,
+		    '$Sweater', 2
+		]
+	    }
+	}
+    }, $res);
+
+    xlog "Delete message 3 which has both flags on it";
+    $talk->store(3, '+flags', ['\\Deleted']);
+    $talk->expunge();
+
+    xlog "Check the counts went down by the right amount";
+    $res = $store->xconvmeta($cid, ['count', ['$Cosby']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Cosby', 1 ]
+	    }
+	}
+    }, $res);
+    $res = $store->xconvmeta($cid, ['count', ['$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [ '$Sweater', 1 ]
+	    }
+	}
+    }, $res);
+
+    xlog "We can request multiple flags at once";
+    $res = $store->xconvmeta($cid, ['count', ['$Quinoa', '$Cosby', '$Sweater']]);
+    $self->assert_deep_equals({
+	xconvmeta => {
+	    $cid => {
+		count => [
+		    '$Cosby', 1,
+		    '$Sweater', 1
+		]
+	    }
+	}
+    }, $res);
+}
 1;

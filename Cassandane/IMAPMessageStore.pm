@@ -543,4 +543,34 @@ sub idle_end
     $talk->{CmdId}++;
 }
 
+sub xconvmeta
+{
+    my ($self, $cidlist, $itemlist) = @_;
+#     $cidlist = [ $cidlist ] if !ref $cidlist;
+#     $itemlist = [ $itemlist ] if !ref $itemlist;
+    my @args = ( $cidlist, $itemlist );
+
+    my $results =
+    {
+	xconvmeta => {},
+    };
+    my %handlers =
+    (
+	xconvmeta => sub
+	{
+	    # expecting: * XCONVMETA d55a42549e674b82 (MODSEQ 29)
+	    my ($response, $rr) = @_;
+# 	    xlog "XCONVMETA rr=" . Dumper($rr);
+	    $results->{xconvmeta}->{$rr->[0]} = _kvlist_to_hash(@{$rr->[1]});
+	},
+    );
+
+    $self->connect();
+
+    $self->{client}->_imap_cmd("xconvmeta", 0, \%handlers, @args)
+	or return undef;
+
+    return $results;
+}
+
 1;
