@@ -1606,4 +1606,65 @@ sub test_sphinx_null_text
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 }
 
+sub test_sphinx_unindexed_sort_all
+{
+    my ($self) = @_;
+
+    xlog "test that SORT...ALL works in the presence of";
+    xlog "unindexed messages, under Sphinx";
+    $self->unindexed_sort_all_common();
+}
+
+sub test_squat_unindexed_sort_all
+{
+    my ($self) = @_;
+
+    xlog "test that SORT...ALL works in the presence of";
+    xlog "unindexed messages, under SQUAT";
+    $self->unindexed_sort_all_common();
+}
+
+sub unindexed_sort_all_common
+{
+    my ($self) = @_;
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    xlog "append 3 messages";
+    my %exp;
+    $exp{A} = $self->make_message('Message A');
+    $exp{B} = $self->make_message('Message B');
+    $exp{C} = $self->make_message('Message C');
+
+    my $res;
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "SORT works";
+    $res = $talk->sort(['uid'], 'utf-8', 'all');
+    $self->assert_deep_equals([ 1, 2, 3 ], $res);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "SORT still works";
+    $res = $talk->sort(['uid'], 'utf-8', 'all');
+    $self->assert_deep_equals([ 1, 2, 3 ], $res);
+
+    xlog "Append another message";
+    $exp{D} = $self->make_message('Message D');
+
+    xlog "SORT sees the new, unindexed, message";
+    $res = $talk->sort(['uid'], 'utf-8', 'all');
+    $self->assert_deep_equals([ 1, 2, 3, 4 ], $res);
+
+    xlog "Index the new message";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "SORT still sees the new, now indexed, message";
+    $res = $talk->sort(['uid'], 'utf-8', 'all');
+    $self->assert_deep_equals([ 1, 2, 3, 4 ], $res);
+}
+
 1;
