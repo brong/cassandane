@@ -1667,4 +1667,89 @@ sub unindexed_sort_all_common
     $self->assert_deep_equals([ 1, 2, 3, 4 ], $res);
 }
 
+sub test_sphinx_unindexed_sort_subject
+{
+    my ($self) = @_;
+
+    xlog "test that SORT...SUBJECT works in the presence of";
+    xlog "unindexed messages, under Sphinx";
+    $self->unindexed_sort_subject_common();
+}
+
+sub test_squat_unindexed_sort_subject
+{
+    my ($self) = @_;
+
+    xlog "test that SORT...SUBJECT works in the presence of";
+    xlog "unindexed messages, under SQUAT";
+    $self->unindexed_sort_subject_common();
+}
+
+sub unindexed_sort_subject_common
+{
+    my ($self) = @_;
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    xlog "append 3 messages";
+    my %exp;
+    $exp{A} = $self->make_message('Vinyl');
+    $exp{B} = $self->make_message('Tattooed');
+    $exp{C} = $self->make_message('Portland');
+
+    my $res;
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "SORT...SUBJECT works";
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
+    $self->assert_deep_equals([ 1 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
+    $self->assert_deep_equals([ 2 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
+    $self->assert_deep_equals([ 3 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
+    $self->assert_deep_equals([ ], $res);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "SORT still works";
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
+    $self->assert_deep_equals([ 1 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
+    $self->assert_deep_equals([ 2 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
+    $self->assert_deep_equals([ 3 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
+    $self->assert_deep_equals([ ], $res);
+
+    xlog "Append another message";
+    $exp{D} = $self->make_message('Brooklyn');
+
+    xlog "SORT sees the new, unindexed, message";
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
+    $self->assert_deep_equals([ 1 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
+    $self->assert_deep_equals([ 2 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
+    $self->assert_deep_equals([ 3 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
+    $self->assert_deep_equals([ 4 ], $res);
+
+    xlog "Index the new message";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "SORT still sees the new, now indexed, message";
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
+    $self->assert_deep_equals([ 1 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
+    $self->assert_deep_equals([ 2 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
+    $self->assert_deep_equals([ 3 ], $res);
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
+    $self->assert_deep_equals([ 4 ], $res);
+}
+
 1;
