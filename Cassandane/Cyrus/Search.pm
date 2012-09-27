@@ -1943,4 +1943,72 @@ sub test_squatter_whitespace_sphinx
 	}, $res);
 }
 
+sub config_sphinx_query_limit
+{
+    my ($self, $conf) = @_;
+
+    xlog "Setting conversations=on";
+    $conf->set(conversations => 'on',
+	       conversations_db => 'twoskip');
+    # XCONVMULTISORT only works on Sphinx anyway
+}
+
+sub test_sphinx_query_limit
+{
+    my ($self) = @_;
+
+    xlog "test that Sphinx' default LIMIT 20 on queries is defeated";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+    $self->{store}->set_folder($mboxname);
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $N1 = 30;
+    for (1..$N1)
+    {
+	my $s = "Quinoa x" . sprintf("%07d", $_);
+	$exp{$_} = $self->make_message($s);
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..$N1)
+		}
+	    }
+	}, $res);
+
+    xlog "Check that SORT can see all the messages";
+    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'quinoa');
+    $self->assert_deep_equals([ 1..$N1 ], $res);
+
+    xlog "Check that XCONVMULTISORT can see all the messages";
+    $res = $self->{store}->xconvmultisort(
+		    sort => ['uid'],
+		    search => ['subject', 'quinoa']
+    );
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	position => 1,
+	total => $N1,
+	xconvmulti => [ map { [ "INBOX", $_ ] } (1..$N1) ],
+    }, $res);
+
+}
+
 1;
