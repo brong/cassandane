@@ -1752,4 +1752,46 @@ sub unindexed_sort_subject_common
     $self->assert_deep_equals([ 4 ], $res);
 }
 
+sub test_squatter_whitespace_sphinx
+{
+    my ($self) = @_;
+
+    xlog "test squatter on a folder name with a space in it, with Sphinx";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane.Etsy Quinoa';
+    $talk->create($mboxname) || die "Cannot create folder $mboxname: $@";
+    $self->{store}->set_folder($mboxname);
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $N1 = 10;
+    for (1..$N1)
+    {
+	$exp{$_} = $self->make_message("Message $_");
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Before first index, there is nothing to dump";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({}, $res);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..$N1)
+		}
+	    }
+	}, $res);
+}
+
 1;
