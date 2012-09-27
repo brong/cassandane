@@ -1249,7 +1249,7 @@ sub test_sphinx_xconvmultisort
     my $res = $talk->status($mboxname, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    my @folders = ( 'kale', 'tofu', 'smallbatch' );
+    my @folders = ( 'kale', 'smallbatch', 'tofu' );
 
     xlog "create folders";
     foreach my $folder (@folders)
@@ -1330,24 +1330,173 @@ sub test_sphinx_xconvmultisort
 	    @search = ( 'text', $t->{query} );
 	}
 
-	$res = $self->{store}->xconvmultisort(search => [ @search ]);
+	$res = $self->{store}->xconvmultisort(sort => [ 'uid', 'folder' ],
+					      search => [ @search ]);
 	xlog "res = " . Dumper($res);
 
 	my $exp = {
 	    highestmodseq => $hms,
-	    total => scalar(@{$t->{expected}})
+	    total => scalar(@{$t->{expected}}),
+	    position => 1,
+	    xconvmulti => []
 	};
+	if (!scalar @{$t->{expected}})
+	{
+	    delete $exp->{position};
+	    delete $exp->{xconvmulti};
+	    $exp->{total} = 0;
+	}
 	foreach my $i (@{$t->{expected}})
 	{
 	    my $folder = "INBOX." . $folders[($i-1) % scalar(@folders)];
 	    my $uid = int(($i-1) / scalar(@folders)) + 1;
-	    $exp->{xconvmulti} ||= {};
-	    $exp->{xconvmulti}->{$folder} ||= [];
-	    push(@{$exp->{xconvmulti}->{$folder}}, $uid);
+	    push(@{$exp->{xconvmulti}}, [ $folder, $uid ]);
 	}
 	xlog "expecting " . Data::Dumper::Dumper($exp);
 
 	$self->assert_deep_equals($exp, $res);
+    }
+}
+
+sub config_sphinx_xconvmultisort_anchor
+{
+    my ($self, $conf) = @_;
+
+    xlog "Setting conversations=on";
+    $conf->set(conversations => 'on',
+	       conversations_db => 'twoskip');
+    # XCONVMULTISORT only works on Sphinx anyway
+}
+
+sub test_sphinx_xconvmultisort_anchor
+{
+    my ($self) = @_;
+
+    xlog "test the XCONVMULTISORT command with an ANCHOR";
+    # Note, Squat does not support multiple folder searching
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    my @folders = ( 'kale', 'tofu', 'smallbatch' );
+
+    xlog "create folders";
+    foreach my $folder (@folders)
+    {
+	$talk->create("$mboxname.$folder")
+	    or die "Cannot create folder $mboxname.$folder: $@";
+    }
+
+    my @subjects = ( qw(
+	gastropub hella mumblecore brooklyn locavore fingerstache
+	twee semiotics VHS Austin stumptown vinyl irony organic
+	Helvetica vice cliche tumblr dreamcatcher
+    ) );
+    # lexically sorted order of indexes into @subjects
+    my @order = ( 9, 3, 16, 18, 5, 0, 1, 14, 12, 4,
+		  2, 13, 7, 10, 17, 6, 8, 15, 11 );
+    my @sorted_tuples;
+    map
+    {
+	my $i = 0 + $_;
+	push(@sorted_tuples, [
+	    "INBOX." . $folders[$i % scalar(@folders)],
+	    int($i / scalar(@folders)) + 1
+	]);
+    } @order;
+
+    xlog "append some messages";
+    my $exp = {};
+    map { $exp->{$_} = {}; } @folders;
+    my $uid = 1;
+    my $folderidx = 0;
+    foreach my $s (@subjects)
+    {
+	my $folder = $folders[$folderidx];
+	$self->{store}->set_folder("$mboxname.$folder");
+	my $msg = $self->make_message($s);
+	$exp->{$folder}->{$uid} = $msg;
+	$msg->set_attribute(uid => $uid);
+
+	$folderidx++;
+	if ($folderidx >= scalar(@folders)) {
+	    $folderidx = 0;
+	    $uid++;
+	}
+    }
+
+    xlog "check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$mboxname.$folder");
+	$self->check_messages($exp->{$folder});
+    }
+
+    xlog "Index the messages";
+    foreach my $folder (@folders)
+    {
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname.$folder");
+    }
+
+    xlog "Check the results of the index run";
+    $folderidx = 0;
+    $uid = 1;
+    foreach my $s (@subjects)
+    {
+	xlog "Testing subject \"$s\"";
+
+	$res = $self->{store}->xconvmultisort(search => [ 'subject', "\"$s\"" ]);
+	delete $res->{highestmodseq} if defined $res;
+	xlog "res = " . Dumper($res);
+
+	my $exp = { total => 1, position => 1, xconvmulti => [] };
+	my $folder = "INBOX." . $folders[$folderidx];
+	push(@{$exp->{xconvmulti}}, [ $folder, $uid ]);
+
+	$folderidx++;
+	if ($folderidx >= scalar(@folders)) {
+	    $folderidx = 0;
+	    $uid++;
+	}
+	xlog "expecting " . Data::Dumper::Dumper($exp);
+
+	$self->assert_deep_equals($exp, $res);
+    }
+
+    xlog "Check that cross-folder sorting works";
+    $res = $self->{store}->xconvmultisort(sort => [ 'subject' ]);
+    delete $res->{highestmodseq} if defined $res;
+    my $exp2 = {
+	total => scalar(@sorted_tuples),
+	position => 1,
+	xconvmulti => \@sorted_tuples
+    };
+    $self->assert_deep_equals($exp2, $res);
+
+    xlog "Check that MULTIANCHOR works";
+    for (my $i = 0 ; $i < scalar(@subjects) ; $i++)
+    {
+	my $folder = $sorted_tuples[$i]->[0];
+	my $uid = $sorted_tuples[$i]->[1];
+	xlog "$i: folder $folder uid $uid";
+	$res = $self->{store}->xconvmultisort(
+	    sort => [ 'subject' ],
+	    windowargs => [
+		'MULTIANCHOR', [ $uid, $folder, 0, 1 ]
+	    ]
+	);
+	delete $res->{highestmodseq} if defined $res;
+	$self->assert_deep_equals({
+	    total => scalar(@sorted_tuples),
+	    position => ($i+1),
+	    xconvmulti => [ [ $folder, $uid ] ],
+	}, $res);
     }
 }
 

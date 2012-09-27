@@ -414,13 +414,13 @@ sub xconvmultisort
 	    #xlog "XXX XCONVMULTI response=$response rr=" .  Data::Dumper::Dumper($rr);
 	    my $folders = $rr->[0];
 	    my $tuples = $rr->[1];
+	    $results->{xconvmulti} = [];
 	    foreach my $tuple (@$tuples)
 	    {
-		my $folder = $folders->[$tuple->[0]];
-		my $uid = 0 + $tuple->[1];
-		$results->{xconvmulti} ||= {};
-		$results->{xconvmulti}->{$folder} ||= [];
-		push(@{$results->{xconvmulti}->{$folder}}, $uid);
+		push(@{$results->{xconvmulti}}, [
+		    $folders->[$tuple->[0]],
+		    0 + $tuple->[1]
+		]);
 	    }
 	},
 	total => sub
@@ -432,6 +432,11 @@ sub xconvmultisort
 	{
 	    my ($response, $rr) = @_;
 	    $results->{highestmodseq} = 0 + $rr->[0];
+	},
+	position => sub
+	{
+	    my ($response, $rr) = @_;
+	    $results->{position} = 0 + $rr->[0];
 	},
     };
 
