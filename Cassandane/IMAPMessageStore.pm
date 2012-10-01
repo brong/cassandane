@@ -418,9 +418,13 @@ sub xconvmultisort
 	    foreach my $tuple (@$tuples)
 	    {
 		push(@{$results->{xconvmulti}}, [
-		    $folders->[$tuple->[0]],
+		    $folders->[$tuple->[0]]->[0],
 		    0 + $tuple->[1]
 		]);
+	    }
+	    foreach my $folder (@$folders) {
+		$results->{uidvalidity} ||= {};
+		$results->{uidvalidity}->{$folder->[0]} = $folder->[1];
 	    }
 	},
 	total => sub

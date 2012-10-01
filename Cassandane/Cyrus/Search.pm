@@ -1241,21 +1241,25 @@ sub test_sphinx_xconvmultisort
     # Note, Squat does not support multiple folder searching
 
     my $talk = $self->{store}->get_client();
-    my $mboxname = 'user.cassandane';
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
 
     # check IMAP server has the XCONVERSATIONS capability
     $self->assert($talk->capability()->{xconversations});
 
-    my $res = $talk->status($mboxname, ['uidvalidity']);
-    my $uidvalidity = $res->{uidvalidity};
+    my $res;
+    my %uidvalidity;
 
     my @folders = ( 'kale', 'smallbatch', 'tofu' );
 
     xlog "create folders";
     foreach my $folder (@folders)
     {
-	$talk->create("$mboxname.$folder")
-	    or die "Cannot create folder $mboxname.$folder: $@";
+	my $ff = "$mboxname_ext.$folder";
+	$talk->create($ff)
+	    or die "Cannot create folder $ff: $@";
+	$res = $talk->status($ff, ['uidvalidity']);
+	$uidvalidity{$ff} = $res->{uidvalidity};
     }
 
     xlog "append some messages";
@@ -1267,7 +1271,7 @@ sub test_sphinx_xconvmultisort
     foreach my $d (@filter_data)
     {
 	my $folder = $folders[$folderidx];
-	$self->{store}->set_folder("$mboxname.$folder");
+	$self->{store}->set_folder("$mboxname_ext.$folder");
 	$exp->{$folder}->{$uid} = $self->make_filter_message($d, $uid);
 
 	$folderidx++;
@@ -1281,14 +1285,14 @@ sub test_sphinx_xconvmultisort
     xlog "check the messages got there";
     foreach my $folder (@folders)
     {
-	$self->{store}->set_folder("$mboxname.$folder");
+	$self->{store}->set_folder("$mboxname_ext.$folder");
 	$self->check_messages($exp->{$folder});
     }
 
     xlog "Index the messages";
     foreach my $folder (@folders)
     {
-	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname.$folder");
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname_int.$folder");
     }
 
     xlog "Check the results of the index run";
@@ -1338,19 +1342,22 @@ sub test_sphinx_xconvmultisort
 	    highestmodseq => $hms,
 	    total => scalar(@{$t->{expected}}),
 	    position => 1,
+	    uidvalidity => {},
 	    xconvmulti => []
 	};
 	if (!scalar @{$t->{expected}})
 	{
 	    delete $exp->{position};
 	    delete $exp->{xconvmulti};
+	    delete $exp->{uidvalidity};
 	    $exp->{total} = 0;
 	}
 	foreach my $i (@{$t->{expected}})
 	{
-	    my $folder = "INBOX." . $folders[($i-1) % scalar(@folders)];
+	    my $folder = "$mboxname_ext." . $folders[($i-1) % scalar(@folders)];
 	    my $uid = int(($i-1) / scalar(@folders)) + 1;
 	    push(@{$exp->{xconvmulti}}, [ $folder, $uid ]);
+	    $exp->{uidvalidity}->{$folder} = $uidvalidity{$folder};
 	}
 	xlog "expecting " . Data::Dumper::Dumper($exp);
 
@@ -1376,21 +1383,25 @@ sub test_sphinx_xconvmultisort_anchor
     # Note, Squat does not support multiple folder searching
 
     my $talk = $self->{store}->get_client();
-    my $mboxname = 'user.cassandane';
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
 
     # check IMAP server has the XCONVERSATIONS capability
     $self->assert($talk->capability()->{xconversations});
 
-    my $res = $talk->status($mboxname, ['uidvalidity']);
-    my $uidvalidity = $res->{uidvalidity};
+    my $res;
+    my %uidvalidity;
 
     my @folders = ( 'kale', 'tofu', 'smallbatch' );
 
     xlog "create folders";
     foreach my $folder (@folders)
     {
-	$talk->create("$mboxname.$folder")
-	    or die "Cannot create folder $mboxname.$folder: $@";
+	my $ff = "$mboxname_ext.$folder";
+	$talk->create($ff)
+	    or die "Cannot create folder $ff: $@";
+	$res = $talk->status($ff, ['uidvalidity']);
+	$uidvalidity{$ff} = $res->{uidvalidity};
     }
 
     my @subjects = ( qw(
@@ -1406,7 +1417,7 @@ sub test_sphinx_xconvmultisort_anchor
     {
 	my $i = 0 + $_;
 	push(@sorted_tuples, [
-	    "INBOX." . $folders[$i % scalar(@folders)],
+	    "$mboxname_ext." . $folders[$i % scalar(@folders)],
 	    int($i / scalar(@folders)) + 1
 	]);
     } @order;
@@ -1419,7 +1430,7 @@ sub test_sphinx_xconvmultisort_anchor
     foreach my $s (@subjects)
     {
 	my $folder = $folders[$folderidx];
-	$self->{store}->set_folder("$mboxname.$folder");
+	$self->{store}->set_folder("$mboxname_ext.$folder");
 	my $msg = $self->make_message($s);
 	$exp->{$folder}->{$uid} = $msg;
 	$msg->set_attribute(uid => $uid);
@@ -1434,14 +1445,14 @@ sub test_sphinx_xconvmultisort_anchor
     xlog "check the messages got there";
     foreach my $folder (@folders)
     {
-	$self->{store}->set_folder("$mboxname.$folder");
+	$self->{store}->set_folder("$mboxname_ext.$folder");
 	$self->check_messages($exp->{$folder});
     }
 
     xlog "Index the messages";
     foreach my $folder (@folders)
     {
-	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname.$folder");
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname_int.$folder");
     }
 
     xlog "Check the results of the index run";
@@ -1455,8 +1466,13 @@ sub test_sphinx_xconvmultisort_anchor
 	delete $res->{highestmodseq} if defined $res;
 	xlog "res = " . Dumper($res);
 
-	my $exp = { total => 1, position => 1, xconvmulti => [] };
-	my $folder = "INBOX." . $folders[$folderidx];
+	my $folder = "$mboxname_ext." . $folders[$folderidx];
+	my $exp = {
+	    total => 1,
+	    position => 1,
+	    xconvmulti => [],
+	    uidvalidity => { $folder => $uidvalidity{$folder} }
+	};
 	push(@{$exp->{xconvmulti}}, [ $folder, $uid ]);
 
 	$folderidx++;
@@ -1475,7 +1491,8 @@ sub test_sphinx_xconvmultisort_anchor
     my $exp2 = {
 	total => scalar(@sorted_tuples),
 	position => 1,
-	xconvmulti => \@sorted_tuples
+	xconvmulti => \@sorted_tuples,
+	uidvalidity => \%uidvalidity
     };
     $self->assert_deep_equals($exp2, $res);
 
@@ -1496,6 +1513,7 @@ sub test_sphinx_xconvmultisort_anchor
 	    total => scalar(@sorted_tuples),
 	    position => ($i+1),
 	    xconvmulti => [ [ $folder, $uid ] ],
+	    uidvalidity => \%uidvalidity
 	}, $res);
     }
 }
@@ -2007,6 +2025,7 @@ sub test_sphinx_query_limit
 	position => 1,
 	total => $N1,
 	xconvmulti => [ map { [ "INBOX", $_ ] } (1..$N1) ],
+	uidvalidity => { "INBOX" => $uidvalidity },
     }, $res);
 
 }
