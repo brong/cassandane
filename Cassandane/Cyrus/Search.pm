@@ -2203,4 +2203,66 @@ sub test_sphinx_xconvmultisort_optimisation
     }
 }
 
+sub config_sphinx_xconvmultisort_atsign
+{
+    my ($self, $conf) = @_;
+
+    xlog "Setting conversations=on";
+    $conf->set(conversations => 'on',
+	       conversations_db => 'twoskip');
+    # XCONVMULTISORT only works on Sphinx anyway
+}
+
+sub test_sphinx_xconvmultisort_atsign
+{
+    my ($self) = @_;
+
+    xlog "test quoting of the @ sign in the XCONVMULTISORT command";
+    # Note, Squat does not support multiple folder searching
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname_ext, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append two messages";
+    my %exp;
+    $exp{A} = $self->make_message('Message A',
+			from => Cassandane::Address->new(
+				    name => "Craft Beer",
+				    localpart => "craft.beer",
+				    domain => "brooklyn.com"
+				),
+			);
+    $exp{B} = $self->make_message('Message B',
+			from => Cassandane::Address->new(
+				    name => "Art Party",
+				    localpart => "art.party",
+				    domain => "shoreditch.co.uk"
+				),
+			);
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
+
+
+    $res = $self->{store}->xconvmultisort(search => [ 'from', { Quote => '@brooklyn' } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 1 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+}
+
 1;
