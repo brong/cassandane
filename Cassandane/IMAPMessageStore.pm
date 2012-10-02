@@ -582,4 +582,27 @@ sub xconvmeta
     return $results;
 }
 
+sub xstats
+{
+    my ($self) = @_;
+
+    my $results;
+    my %handlers =
+    (
+	xstats => sub
+	{
+	    # expecting: * XCONVMETA d55a42549e674b82 (MODSEQ 29)
+	    my ($response, $rr) = @_;
+	    $results = { @$rr };
+	},
+    );
+
+    $self->connect();
+
+    $self->{client}->_imap_cmd("xstats", 0, \%handlers)
+	or return undef;
+
+    return $results;
+}
+
 1;

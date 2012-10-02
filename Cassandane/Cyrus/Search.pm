@@ -666,7 +666,48 @@ my @filter_tests = (
     # header: matches any header
     { query => 'header:mixtape', expected => [ 1..6 ] },
     { query => 'body:mixtape', expected => [ 7 ] },
+    { query => 'mixtape', expected => [ 1..7 ] },
 );
+
+sub filter_test_to_imap_search
+{
+    my ($t) = @_;
+
+    my @search;
+    if ($t->{query} =~ m/header:/)
+    {
+	# no direct equivalent
+	return undef;
+    }
+    elsif ($t->{query} =~ m/^__begin:and/)
+    {
+	@search = split(/\s+/, $t->{query});
+	shift(@search);
+	pop(@search);
+	@search = map { ('text', $_) } @search;
+    }
+    elsif ($t->{query} =~ m/^__begin:or/)
+    {
+	my @s = split(/\s+/, $t->{query});
+	shift(@s);
+	pop(@s);
+	@search = ( 'text', shift(@s) );
+	foreach my $t (@s)
+	{
+	    @search = ('or', 'text', $t, @search);
+	}
+    }
+    elsif ($t->{query} =~ m/:/)
+    {
+	# transform 'from:foo' into 'from' 'foo'
+	@search = split(/:/, $t->{query});
+    }
+    else
+    {
+	@search = ( 'text', $t->{query} );
+    }
+    return \@search;
+}
 
 sub prefilter_test_common
 {
@@ -1300,42 +1341,11 @@ sub test_sphinx_xconvmultisort
     {
 	xlog "Testing query \"$t->{query}\"";
 
-	my @search;
-	if ($t->{query} =~ m/header:/)
-	{
-	    # no direct equivalent
-	    next;
-	}
-	elsif ($t->{query} =~ m/^__begin:and/)
-	{
-	    @search = split(/\s+/, $t->{query});
-	    shift(@search);
-	    pop(@search);
-	    @search = map { ('text', $_) } @search;
-	}
-	elsif ($t->{query} =~ m/^__begin:or/)
-	{
-	    my @s = split(/\s+/, $t->{query});
-	    shift(@s);
-	    pop(@s);
-	    @search = ( 'text', shift(@s) );
-	    foreach my $t (@s)
-	    {
-		@search = ('or', 'text', $t, @search);
-	    }
-	}
-	elsif ($t->{query} =~ m/:/)
-	{
-	    # transform 'from:foo' into 'from' 'foo'
-	    @search = split(/:/, $t->{query});
-	}
-	else
-	{
-	    @search = ( 'text', $t->{query} );
-	}
+	my $search = filter_test_to_imap_search($t);
+	next if !defined $search;
 
 	$res = $self->{store}->xconvmultisort(sort => [ 'uid', 'folder' ],
-					      search => [ @search ]);
+					      search => [ @$search ]);
 	xlog "res = " . Dumper($res);
 
 	my $exp = {
@@ -2028,6 +2038,169 @@ sub test_sphinx_query_limit
 	uidvalidity => { "INBOX" => $uidvalidity },
     }, $res);
 
+}
+
+sub config_sphinx_xconvmultisort_optimisation
+{
+    my ($self, $conf) = @_;
+
+    xlog "Setting conversations=on";
+    $conf->set(conversations => 'on',
+	       conversations_db => 'twoskip');
+    # XCONVMULTISORT only works on Sphinx anyway
+}
+
+sub xstats_delta
+{
+    my ($before, $after) = @_;
+    my $res = {};
+
+    foreach my $m (sort { $a cmp $b } keys %$after)
+    {
+	$res->{$m} = $after->{$m} - $before->{$m};
+	xlog "xstat $m " . $res->{$m} if get_verbose;
+    }
+    return $res;
+}
+
+sub test_sphinx_xconvmultisort_optimisation
+{
+    my ($self) = @_;
+
+    xlog "test performance optimisations of the XCONVMULTISORT command";
+    # Note, Squat does not support multiple folder searching
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res;
+    my %uidvalidity;
+
+    my @folders = ( 'kale', 'smallbatch', 'tofu' );
+
+    xlog "create folders";
+    foreach my $folder (@folders)
+    {
+	my $ff = "$mboxname_ext.$folder";
+	$talk->create($ff)
+	    or die "Cannot create folder $ff: $@";
+	$res = $talk->status($ff, ['uidvalidity']);
+	$uidvalidity{$ff} = $res->{uidvalidity};
+    }
+
+    xlog "append some messages";
+    my $exp = {};
+    map { $exp->{$_} = {}; } @folders;
+    my $uid = 1;
+    my $hms = 6;
+    my $folderidx = 0;
+    foreach my $d (@filter_data)
+    {
+	my $folder = $folders[$folderidx];
+	$self->{store}->set_folder("$mboxname_ext.$folder");
+	$exp->{$folder}->{$uid} = $self->make_filter_message($d, $uid);
+
+	$folderidx++;
+	if ($folderidx >= scalar(@folders)) {
+	    $folderidx = 0;
+	    $uid++;
+	}
+	$hms++;
+    }
+
+    xlog "check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$mboxname_ext.$folder");
+	$self->check_messages($exp->{$folder});
+    }
+
+    xlog "Index the messages";
+    foreach my $folder (@folders)
+    {
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname_int.$folder");
+    }
+
+    my @tests = (
+	{
+	    # Querying an indexed header like TO/FROM/CC/BCC/SUBJECT
+	    query => [ 'to', 'mixtape' ],
+	    expected => {
+		MESSAGE_MAP => 0,
+		MSGDATA_LOAD => 1,
+		SEARCH_BODY => 0,
+		SEARCH_CACHE_HEADER => 0,
+		SEARCH_EVALUATE => 1,
+		SEARCH_HEADER => 0,
+		SEARCH_RESULT => 1,
+		SEARCH_TRIVIAL => 0,
+		SPHINX_MATCH => 1,
+		SPHINX_MULTIPLE => 1,
+		SPHINX_QUERY => 1,
+		SPHINX_RESULT => 1,
+		SPHINX_ROW => 1,
+		SPHINX_SINGLE => 0,
+		SPHINX_UNINDEXED => 0,
+	    }
+	},
+	{
+	    # Querying an unindexed cached header
+	    query => [ 'header', 'narwhal', 'mixtape' ],
+	    expected => {
+		MESSAGE_MAP => 0,
+		MSGDATA_LOAD => 6,
+		SEARCH_BODY => 0,
+		SEARCH_CACHE_HEADER => 6,
+		SEARCH_EVALUATE => 6,
+		SEARCH_HEADER => 0,
+		SEARCH_RESULT => 1,
+		SEARCH_TRIVIAL => 0,
+		SPHINX_MATCH => 2,
+		SPHINX_MULTIPLE => 1,
+		SPHINX_QUERY => 1,
+		SPHINX_RESULT => 6,
+		SPHINX_ROW => 6,
+		SPHINX_SINGLE => 0,
+		SPHINX_UNINDEXED => 0,
+	    }
+	},
+	{
+	    # Querying the body
+	    query => [ 'body', 'mixtape' ],
+	    expected => {
+		MESSAGE_MAP => 0,
+		MSGDATA_LOAD => 1,
+		SEARCH_BODY => 0,
+		SEARCH_CACHE_HEADER => 0,
+		SEARCH_EVALUATE => 1,
+		SEARCH_HEADER => 0,
+		SEARCH_RESULT => 1,
+		SEARCH_TRIVIAL => 0,
+		SPHINX_MATCH => 1,
+		SPHINX_MULTIPLE => 1,
+		SPHINX_QUERY => 1,
+		SPHINX_RESULT => 1,
+		SPHINX_ROW => 1,
+		SPHINX_SINGLE => 0,
+		SPHINX_UNINDEXED => 0,
+	    }
+	},
+    );
+
+    foreach my $t (@tests)
+    {
+	xlog "Check side effects of: " . join(' ', @{$t->{query}});
+	my $before = $self->{store}->xstats();
+	$res = $self->{store}->xconvmultisort(search => [ @{$t->{query}} ])
+	    or die "XCONVMULTISORT failed: $@";
+	my $delta = xstats_delta($before, $self->{store}->xstats());
+	my $xdelta = { map { $_ => $delta->{$_} } keys %{$t->{expected}} };
+	$self->assert_deep_equals($xdelta, $t->{expected});
+    }
 }
 
 1;
