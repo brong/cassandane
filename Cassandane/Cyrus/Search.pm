@@ -2276,4 +2276,74 @@ sub test_sphinx_xconvmultisort_atsign
     }, $res);
 }
 
+sub config_sphinx_xconvmultisort_unindexed_flags
+{
+    my ($self, $conf) = @_;
+
+    xlog "Setting conversations=on";
+    $conf->set(conversations => 'on',
+	       conversations_db => 'twoskip');
+    # XCONVMULTISORT only works on Sphinx anyway
+}
+
+sub test_sphinx_xconvmultisort_unindexed_flags
+{
+    my ($self) = @_;
+
+    xlog "test the XCONVMULTISORT command with unindexed messages";
+    xlog "and searches which don't use the search engine [IRIS-2011]";
+    # Note, Squat does not support multiple folder searching
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname_ext, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Append two messages";
+    my %exp;
+    $exp{A} = $self->make_message('artparty');	    # UID 1
+    $exp{B} = $self->make_message('brooklyn');	    # UID 2
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
+
+    xlog "Append two more messages, these will not be indexed";
+    $exp{C} = $self->make_message('cosby');	    # UID 3
+    $exp{D} = $self->make_message('dreamcatcher');  # UID 4
+
+    xlog "Check the messages got there";
+    $self->check_messages(\%exp);
+
+    $talk->store(1, '+flags', [ '\Draft' ]);
+    $talk->store(3, '+flags', [ '\Draft' ]);
+
+    xlog "Search for DRAFT";
+    $res = $self->{store}->xconvmultisort(search => [ 'draft' ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 2,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 1 ], [ $mboxname_ext, 3 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+
+    xlog "Search for UNDRAFT";
+    $res = $self->{store}->xconvmultisort(search => [ 'undraft' ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 2,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 2 ], [ $mboxname_ext, 4 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+}
+
+
 1;
