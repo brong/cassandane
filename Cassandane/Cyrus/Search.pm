@@ -798,6 +798,17 @@ sub rolling_test_common
 		}
 	    }
 	}, $res);
+
+    xlog "Sync channel directory still exists";
+    my $channeldir = $self->{instance}->{basedir} .  "/conf/sync/squatter";
+    $self->assert( -d $channeldir );
+
+    xlog "No sync log files are left over";
+    opendir CHANNEL, $channeldir
+	or die "Cannot open $channeldir for reading: $!";
+    my @files = grep { m/^log/ } readdir(CHANNEL);
+    closedir CHANNEL;
+    $self->assert( !scalar @files );
 }
 
 sub config_rolling_squat
