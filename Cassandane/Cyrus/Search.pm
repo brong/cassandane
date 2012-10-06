@@ -2214,7 +2214,7 @@ sub test_sphinx_xconvmultisort_optimisation
     }
 }
 
-sub config_sphinx_xconvmultisort_atsign
+sub config_sphinx_xconvmultisort_metachar
 {
     my ($self, $conf) = @_;
 
@@ -2224,11 +2224,11 @@ sub config_sphinx_xconvmultisort_atsign
     # XCONVMULTISORT only works on Sphinx anyway
 }
 
-sub test_sphinx_xconvmultisort_atsign
+sub test_sphinx_xconvmultisort_metachar
 {
     my ($self) = @_;
 
-    xlog "test quoting of the @ sign in the XCONVMULTISORT command";
+    xlog "test quoting of SphinxQL metacharacters in the XCONVMULTISORT command";
     # Note, Squat does not support multiple folder searching
 
     my $talk = $self->{store}->get_client();
@@ -2241,39 +2241,68 @@ sub test_sphinx_xconvmultisort_atsign
     my $res = $talk->status($mboxname_ext, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
 
-    xlog "append two messages";
+    my @subjects = (
+	"thund!ercats", "card\"igan", "ho\$odie",
+	"sar'torial", "gen-trify", "ve/gan",
+	"semi<otics", "bl=og", "vin\@yl",
+	"br[unch", "ir\\ony", "um]mi",
+	"org^anic", "pit|chfork", "iph~one"
+    );
+
+    xlog "Append some messages";
     my %exp;
-    $exp{A} = $self->make_message('Message A',
-			from => Cassandane::Address->new(
-				    name => "Craft Beer",
-				    localpart => "craft.beer",
-				    domain => "brooklyn.com"
-				),
-			);
-    $exp{B} = $self->make_message('Message B',
-			from => Cassandane::Address->new(
-				    name => "Art Party",
-				    localpart => "art.party",
-				    domain => "shoreditch.co.uk"
-				),
-			);
+    my $uid = 1;
+    foreach my $s (@subjects)
+    {
+	$exp{$uid} = $self->make_message('narwhal ' . $s . ' whatever');
+	$uid++;
+    }
 
     xlog "check the messages got there";
-    $self->check_messages(\%exp);
+    $self->check_messages(\%exp, keyed_on => 'uid');
 
     xlog "Index the messages";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
 
+    xlog "Search for \"narwhal\", all messages have it";
+    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Quote => 'narwhal' } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    my $N = scalar(@subjects);
+    $self->assert_deep_equals({
+	total => $N,
+	position => 1,
+	xconvmulti => [ map { [ $mboxname_ext, $_ ] } (1..$N) ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
 
-    $res = $self->{store}->xconvmultisort(search => [ 'from', { Quote => '@brooklyn' } ])
+    xlog "Search for \"whatever\", all messages have it";
+    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Quote => 'whatever' } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
-	total => 1,
+	total => $N,
 	position => 1,
-	xconvmulti => [ [ $mboxname_ext, 1 ] ],
+	xconvmulti => [ map { [ $mboxname_ext, $_ ] } (1..$N) ],
 	uidvalidity => { $mboxname_ext => $uidvalidity }
     }, $res);
+
+    xlog "Search for each subject in turn";
+    $uid = 1;
+    foreach my $s (@subjects)
+    {
+	xlog "Search for subject $s";
+	$res = $self->{store}->xconvmultisort(search => [ 'subject', { Quote => $s } ])
+	    or die "XCONVMULTISORT failed: $@";
+	delete $res->{highestmodseq} if defined $res;
+	$self->assert_deep_equals({
+	    total => 1,
+	    position => 1,
+	    xconvmulti => [ [ $mboxname_ext, $uid ] ],
+	    uidvalidity => { $mboxname_ext => $uidvalidity }
+	}, $res);
+	$uid++;
+    }
 }
 
 sub config_sphinx_xconvmultisort_unindexed_flags
