@@ -1796,14 +1796,12 @@ sub test_bogus_in_reply_to
     $self->check_messages(\%exp);
 }
 
-sub config_counted_flags
-{
-    my ($self, $conf) = @_;
-    xlog "Setting conversations_counted_flags = '\$Cosby \$Sweater'";
-    $conf->set(conversations_counted_flags => '$Cosby $Sweater');
-}
+Cassandane::Cyrus::TestCase::magic(CountedFlags => sub {
+    shift->config_set(conversations_counted_flags => '$Cosby $Sweater');
+});
 
 sub test_counted_flags
+    :CountedFlags
 {
     my ($self) = @_;
 

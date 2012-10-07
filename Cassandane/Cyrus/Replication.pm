@@ -809,14 +809,12 @@ sub test_replication_mailbox_new_enough
     $self->run_replication(mailbox => $mailbox12);
 }
 
-sub config_rolling
-{
-    my ($self, $conf) = @_;
-    xlog "Setting sync_log = yes";
-    $conf->set(sync_log => 'yes');
-}
+Cassandane::Cyrus::TestCase::magic(SyncLog => sub {
+    shift->config_set(sync_log => 'yes');
+});
 
 sub test_rolling
+    :SyncLog
 {
     my ($self) = @_;
 

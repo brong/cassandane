@@ -130,6 +130,7 @@ sub new
     return $self;
 }
 
+# Register a word whose appearance in the name or attributes of a test
 # will magically cause some special actions to be taken during test
 # setup.  This used to be a horrible hack to enable a replica instance
 # if the test name contained the word "replication", but now it's more

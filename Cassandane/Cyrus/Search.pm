@@ -55,6 +55,21 @@ use Cassandane::Util::Log;
 
 Cassandane::Cyrus::TestCase::magic(sphinx => sub { shift->want(search => 'sphinx'); });
 Cassandane::Cyrus::TestCase::magic(squat => sub { shift->want(search => 'squat'); });
+Cassandane::Cyrus::TestCase::magic(xconvmultisort => sub {
+    shift->config_set(
+	conversations => 'on',
+	conversations_db => 'twoskip'
+    );
+});
+Cassandane::Cyrus::TestCase::magic(RollingSquatter => sub {
+    shift->config_set(
+	sync_log => 'yes',
+	sync_log_channels => 'squatter'
+    );
+});
+Cassandane::Cyrus::TestCase::magic(SmallBatchsize => sub {
+    shift->config_set(search_batchsize => '3');
+});
 
 sub new
 {
@@ -242,14 +257,8 @@ sub sphinx_dump
     return $res;
 }
 
-sub config_squatter_sphinx
-{
-    my ($self, $conf) = @_;
-    xlog "Setting search_batchsize=3";
-    $conf->set(search_batchsize => '3');
-}
-
 sub test_squatter_sphinx
+    :SmallBatchsize
 {
     my ($self) = @_;
 
@@ -811,16 +820,8 @@ sub rolling_test_common
     $self->assert( !scalar @files );
 }
 
-sub config_rolling_squat
-{
-    my ($self, $conf) = @_;
-    xlog "Setting sync_log = yes";
-    $conf->set(sync_log => 'yes');
-    xlog "Setting sync_log_channels = squatter";
-    $conf->set(sync_log_channels => 'squatter');
-}
-
 sub test_rolling_squat
+    :RollingSquatter
 {
     my ($self) = @_;
 
@@ -828,16 +829,8 @@ sub test_rolling_squat
     $self->rolling_test_common(\&squat_dump);
 }
 
-sub config_rolling_sphinx
-{
-    my ($self, $conf) = @_;
-    xlog "Setting sync_log = yes";
-    $conf->set(sync_log => 'yes');
-    xlog "Setting sync_log_channels = squatter";
-    $conf->set(sync_log_channels => 'squatter');
-}
-
 sub test_rolling_sphinx
+    :RollingSquatter
 {
     my ($self) = @_;
 
@@ -845,16 +838,8 @@ sub test_rolling_sphinx
     $self->rolling_test_common(\&sphinx_dump);
 }
 
-sub config_rolling_many_sphinx
-{
-    my ($self, $conf) = @_;
-    xlog "Setting sync_log = yes";
-    $conf->set(sync_log => 'yes');
-    xlog "Setting sync_log_channels = squatter";
-    $conf->set(sync_log_channels => 'squatter');
-}
-
 sub test_rolling_many_sphinx
+    :RollingSquatter
 {
     my ($self, $dumper) = @_;
 
@@ -938,18 +923,13 @@ sub test_rolling_many_sphinx
     }
 }
 
-sub config_mgr_timeout_sphinx
-{
-    my ($self, $conf) = @_;
-    xlog "Setting sync_log = yes";
-    $conf->set(sync_log => 'yes');
-    xlog "Setting sync_log_channels = squatter";
-    $conf->set(sync_log_channels => 'squatter');
-    xlog "Setting sphinxmgr_timeout = 5";
-    $conf->set(sphinxmgr_timeout => '5');
-}
+Cassandane::Cyrus::TestCase::magic(SphinxMgrFastTimeout => sub {
+    shift->config_set(sphinxmgr_timeout => '5');
+});
 
 sub test_mgr_timeout_sphinx
+    :RollingSquatter
+    :SphinxMgrFastTimeout
 {
     my ($self, $dumper) = @_;
 
@@ -1275,16 +1255,6 @@ sub test_sphinx_prefilter_multi
     }
 }
 
-sub config_sphinx_xconvmultisort
-{
-    my ($self, $conf) = @_;
-
-    xlog "Setting conversations=on";
-    $conf->set(conversations => 'on',
-	       conversations_db => 'twoskip');
-    # XCONVMULTISORT only works on Sphinx anyway
-}
-
 sub test_sphinx_xconvmultisort
 {
     my ($self) = @_;
@@ -1384,16 +1354,6 @@ sub test_sphinx_xconvmultisort
 
 	$self->assert_deep_equals($exp, $res);
     }
-}
-
-sub config_sphinx_xconvmultisort_anchor
-{
-    my ($self, $conf) = @_;
-
-    xlog "Setting conversations=on";
-    $conf->set(conversations => 'on',
-	       conversations_db => 'twoskip');
-    # XCONVMULTISORT only works on Sphinx anyway
 }
 
 sub test_sphinx_xconvmultisort_anchor
@@ -1539,13 +1499,8 @@ sub test_sphinx_xconvmultisort_anchor
     }
 }
 
-sub config_sphinx_iris1936
-{
-    my ($self, $conf) = @_;
-    $conf->set(search_batchsize => '3');
-}
-
 sub test_sphinx_iris1936
+    :SmallBatchsize
 {
     my ($self) = @_;
 
@@ -1982,17 +1937,8 @@ sub test_squatter_whitespace_sphinx
 	}, $res);
 }
 
-sub config_sphinx_query_limit
-{
-    my ($self, $conf) = @_;
-
-    xlog "Setting conversations=on";
-    $conf->set(conversations => 'on',
-	       conversations_db => 'twoskip');
-    # XCONVMULTISORT only works on Sphinx anyway
-}
-
 sub test_sphinx_query_limit
+    :Xconvmultisort
 {
     my ($self) = @_;
 
@@ -2049,16 +1995,6 @@ sub test_sphinx_query_limit
 	uidvalidity => { "INBOX" => $uidvalidity },
     }, $res);
 
-}
-
-sub config_sphinx_xconvmultisort_optimisation
-{
-    my ($self, $conf) = @_;
-
-    xlog "Setting conversations=on";
-    $conf->set(conversations => 'on',
-	       conversations_db => 'twoskip');
-    # XCONVMULTISORT only works on Sphinx anyway
 }
 
 sub xstats_delta
@@ -2214,16 +2150,6 @@ sub test_sphinx_xconvmultisort_optimisation
     }
 }
 
-sub config_sphinx_xconvmultisort_metachar
-{
-    my ($self, $conf) = @_;
-
-    xlog "Setting conversations=on";
-    $conf->set(conversations => 'on',
-	       conversations_db => 'twoskip');
-    # XCONVMULTISORT only works on Sphinx anyway
-}
-
 sub test_sphinx_xconvmultisort_metachar
 {
     my ($self) = @_;
@@ -2303,16 +2229,6 @@ sub test_sphinx_xconvmultisort_metachar
 	}, $res);
 	$uid++;
     }
-}
-
-sub config_sphinx_xconvmultisort_unindexed_flags
-{
-    my ($self, $conf) = @_;
-
-    xlog "Setting conversations=on";
-    $conf->set(conversations => 'on',
-	       conversations_db => 'twoskip');
-    # XCONVMULTISORT only works on Sphinx anyway
 }
 
 sub test_sphinx_xconvmultisort_unindexed_flags
