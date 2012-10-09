@@ -2290,5 +2290,169 @@ sub test_sphinx_xconvmultisort_unindexed_flags
     }, $res);
 }
 
+# Sphinx is currently broken with cuneiform characters, I suspect
+# because they're off the BMP.  But nobody really cares.
+sub XXXtest_sphinx_xconvmultisort_sumerian
+{
+    my ($self) = @_;
+
+    xlog "test the XCONVMULTISORT command Sumerian characters [IRIS-2007]";
+    # Note, Squat does not support multiple folder searching
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname_ext, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Append messages";
+    my %exp;
+    # These are the three lines of an ancient Sumerian proverb which translates as
+    #
+    #	A disorderly son -
+    #	His mother should not have given birth to him,
+    #	His god should not have created him.
+    #
+    $exp{A} = $self->make_message('Message A',
+				  mime_charset => 'utf-8',
+				  mime_encoding => 'quoted-printable',
+				  body => "=F0=92=8C=89=F0=92=8B=9B=\r\n"
+					  . "=F0=92=89=A1=F0=92=81=B2\r\n"
+					  . "dumu si nu-sa2\r\n");
+    $exp{B} = $self->make_message('Message B',
+				  mime_charset => 'utf-8',
+				  mime_encoding => 'quoted-printable',
+				  body =>
+					  "=F0=92=82=BC=F0=92=80=80=F0=92=89=\r\n"
+					  . "=8C=F0=92=88=BE=F0=92=80=AD=F0=92=\r\n"
+					  . "=85=86=F0=92=81=B3=F0=92=8C=85\r\n"
+					  . "ama-a-ni na-an-u3-(dib?)-tud\r\n");
+    $exp{C} = $self->make_message('Message C',
+				  mime_charset => 'utf-8',
+				  mime_encoding => 'quoted-printable',
+				  body => "=F0=92=80=AD=F0=92=8A=8F=F0=92=88=\r\n"
+					  .  "=BE=F0=92=80=AD=F0=92=81=B6=F0=\r\n"
+					  . "=92=81=B6=F0=92=82=8A\r\n"
+					  . "dig^ir-ra-ni na-an-dim2-dim2-e\r\n");
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname_int);
+
+    xlog "Check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Search for U+12309 CUNEIFORM SIGN TUR(DUMU)";
+    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Literal => "\xf0\x92\x8c\x89" } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 1 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+}
+
+sub test_sphinx_xconvmultisort_cjk
+{
+    my ($self) = @_;
+
+    xlog "Test the XCONVMULTISORT command Chinese/Japanese/Korean";
+    xlog "characters [IRIS-2007]";
+    # Note, Squat does not support multiple folder searching
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname_ext, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Append messages";
+    my %exp;
+    # Chinese lorem ipsum from http://generator.lorem-ipsum.info/
+    # I have no idea what it means.
+    $exp{A} = $self->make_message('Chinese Message',
+				  mime_charset => 'utf-8',
+				  mime_encoding => 'quoted-printable',
+				  body => "=E7=B7=B7=E7=B7=A6 =\r\n"
+					  . "=E6=A8=9B=E6=A7=B7=E6=AE=\r\n"
+					  . "=A6=E6=A6=93=E7=94=82=E7=\r\n"
+					  . "=9D=AE =E9=AB=AC =E8=AD=BA=\r\n"
+					  . "=E9=90=BC=E9=9C=BA =\r\n"
+					  . "=E5=B5=89=E6=84=8A=E6=83=B5 =\r\n"
+					  . "=E7=86=A4=E7=86=A1=E7=A3=8E =\r\n"
+					  . "=E6=BC=BB=E6=BC=8D =E8=A6=9F\r\n");
+    # Japanese lorem ipsum from http://generator.lorem-ipsum.info/
+    # I have no idea what it means.
+    $exp{B} = $self->make_message('Japanese Message',
+				  mime_charset => 'utf-8',
+				  mime_encoding => 'quoted-printable',
+				  body => "=E5=B6=A3=E3=81=91=E4=A6=A6=E3=81=B2==\r\n"
+					  . "E6=A7=8E =E3=81=AD=E8=B6=A3=E3=83=92="
+					  . "=E3=82=A7=E8=AA=A8=E4=A4=A9 =E3=83=92=\r\n"
+					  . "=E3=83=A5=E9=AA=A3=E4=B0=A9=E3=81=93=\r\n"
+					  . "=E3=81=88 =E8=AB=A7=E3=81=BF=E3=82=85 \r\n"
+					  . "=E3=82=AD=E3=83=A5=E6=A6=9F=E4=A7=A5,=\r\n"
+					  . " =E3=83=AA=E3=81=8E=E3=82=87\r\n");
+    # Korean lorem ipsum from http://forums.adobe.com/thread/793576
+    # I have no idea what it means
+    $exp{C} = $self->make_message('Korean Message',
+				  mime_charset => 'utf-8',
+				  mime_encoding => 'quoted-printable',
+				  body => "=EC=82=AC=EC=9A=A9=ED=95=A0 =\r\n"
+					  . "=EC=88=98=EC=9E=88=EB=8A=94 =\r\n"
+					  . "=EA=B5=AC=EC=A0=88 =\r\n"
+					  . "=EB=A7=8E=EC=9D=80 =EB=B3=80=ED=\r\n"
+					  . "=99=94=EA=B0=80 =EC=9E=88=EC=A7=\r\n"
+					  . "=80=EB=A7=8C, =EB=8C=80=EB=B6=80=\r\n"
+					  . "=EB=B6=84=EC=9D=98, =EC=A3=BC\r\n");
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname_int);
+
+    xlog "Check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Search for U+7DF7 which doesn't seem to have a name";
+    $res = $self->{store}->xconvmultisort(search => [ 'body', { Literal => "\xe7\xb7\xb7" } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 1 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+
+    xlog "Search for U+5DA3 which doesn't seem to have a name";
+    $res = $self->{store}->xconvmultisort(search => [ 'body', { Literal => "\xe5\xb6\xa3" } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 2 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+
+    xlog "Search for U+C0AC HANGUL SYLLABLE SA";
+    $res = $self->{store}->xconvmultisort(search => [ 'body', { Literal => "\xec\x82\xac" } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 3 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+}
 
 1;
