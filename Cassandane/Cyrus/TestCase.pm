@@ -992,7 +992,7 @@ sub _replication_is_pending
 
 sub replication_wait
 {
-    my ($self, $channel) = @_;
+    my ($self, $channel, $keep) = @_;
 
     return if (!defined $self->{sync_client_pid});
 
@@ -1000,12 +1000,16 @@ sub replication_wait
 
     # Disconnect during replication to ensure no imapd
     # is locking the mailbox, which deadlocks the tests.
-    $self->_disconnect_all();
+    #
+    # Sometimes (e.g. when waiting for the rolling squatter)
+    # we don't want to disconnect because we want to actually
+    # test that situation.
+    $self->_disconnect_all() if (!$keep);
 
     timed_wait(sub { return !$self->_replication_is_pending($channel); },
 		description => "rolling replication to be finished");
 
-    $self->_reconnect_all();
+    $self->_reconnect_all() if (!$keep);
 }
 
 sub replication_stop

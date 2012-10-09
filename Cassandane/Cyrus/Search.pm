@@ -757,7 +757,7 @@ sub prefilter_test_common
 
 sub rolling_test_common
 {
-    my ($self, $dumper) = @_;
+    my ($self, $dumper, $keep) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -776,7 +776,10 @@ sub rolling_test_common
     xlog "check the messages got there";
     $self->check_messages(\%exp);
 
-    $self->replication_wait('squatter');
+    # The last argument tells replication_wait() not to disconnect
+    # and reconnect the client.  This means that an imapd is alive
+    # and has the mailbox selected while the squatter runs.
+    $self->replication_wait('squatter', $keep);
 
     xlog "Indexer should have indexed the message";
     $res = $dumper->($self->{instance}, $mboxname);
@@ -826,7 +829,7 @@ sub test_rolling_squat
     my ($self) = @_;
 
     xlog "test squatter rolling mode with Squat";
-    $self->rolling_test_common(\&squat_dump);
+    $self->rolling_test_common(\&squat_dump, 0);
 }
 
 sub test_rolling_sphinx
@@ -835,8 +838,19 @@ sub test_rolling_sphinx
     my ($self) = @_;
 
     xlog "test squatter rolling mode with Sphinx";
-    $self->rolling_test_common(\&sphinx_dump);
+    $self->rolling_test_common(\&sphinx_dump, 0);
 }
+
+sub test_rolling_sphinx_locked
+    :RollingSquatter
+{
+    my ($self) = @_;
+
+    xlog "Test squatter rolling mode with Sphinx and an imapd holding";
+    xlog "the mboxname lock in shared mode";
+    $self->rolling_test_common(\&sphinx_dump, 1);
+}
+
 
 sub test_rolling_many_sphinx
     :RollingSquatter
@@ -922,6 +936,7 @@ sub test_rolling_many_sphinx
 	}, $res);
     }
 }
+
 
 Cassandane::Cyrus::TestCase::magic(SphinxMgrFastTimeout => sub {
     shift->config_set(sphinxmgr_timeout => '5');
