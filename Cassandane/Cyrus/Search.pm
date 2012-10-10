@@ -218,6 +218,30 @@ sub sphinx_socket_path
     return $instance->{basedir} . "/conf/socket/sphinx.$user";
 }
 
+sub sphinx_config_path
+{
+    my ($instance, $mbox) = @_;
+
+    my $user;
+    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
+    $user ||= 'cassandane';
+    my $hash = substr($user, 0, 1);
+
+    return $instance->{basedir} . "/sphinx/user/$hash/$user/sphinx.conf";
+}
+
+sub sphinx_pid_file
+{
+    my ($instance, $mbox) = @_;
+
+    my $user;
+    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
+    $user ||= 'cassandane';
+    my $hash = substr($user, 0, 1);
+
+    return $instance->{basedir} . "/sphinx/user/$hash/$user/searchd.pid";
+}
+
 sub sphinx_dump
 {
     my ($instance, $mbox) = @_;
@@ -942,9 +966,10 @@ Cassandane::Cyrus::TestCase::magic(SphinxMgrFastTimeout => sub {
     shift->config_set(sphinxmgr_timeout => '5');
 });
 
-sub test_mgr_timeout_sphinx
+sub test_mgr_timeout
     :RollingSquatter
     :SphinxMgrFastTimeout
+    :Sphinx
 {
     my ($self, $dumper) = @_;
 
@@ -1013,6 +1038,83 @@ sub test_mgr_timeout_sphinx
     xlog "searchd should quietly go away after 5-10 seconds";
     timed_wait(sub { ( ! -e $sock ) },
 	       description => "searchd to be timed out");
+}
+
+sub test_mgr_early_death
+    :RollingSquatter
+    :Sphinx
+{
+    my ($self, $dumper) = @_;
+
+    xlog "test cyr_sphinxmgr detecting the premature death of a searchd";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Check the Sphinx socket does not exist";
+    my $sock = sphinx_socket_path($self->{instance}, $mboxname);
+    die "Socket $sock exists, expecting not" if ( -e $sock );
+
+    xlog "Append a message";
+    my %exp;
+    $exp{A} = $self->make_message("Message A");
+
+    xlog "Check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the message";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the Sphinx socket does exist";
+    die "Socket $sock does not exist" if ( ! -e $sock );
+
+    xlog "Indexer should have indexed the messages";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1
+		}
+	    }
+    }, $res);
+
+    my $pidfile = sphinx_pid_file($self->{instance}, $mboxname);
+
+    xlog "Gracefully shut down the searchd behind sphinxmgr's back";
+    $self->{instance}->run_command({},
+	    '/usr/bin/searchd',
+	    '--config', sphinx_config_path($self->{instance}, $mboxname),
+	    '--stop');
+
+    xlog "Wait until the Sphinx pid file does not exist";
+    timed_wait(sub { ( ! -e $pidfile ) },
+	       description => "searchd to shut down");
+
+    xlog "Append another message";
+    $exp{B} = $self->make_message("Message B");
+
+    xlog "Check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the Sphinx socket does exist";
+    die "Socket $sock does not exist" if ( ! -e $sock );
+
+    xlog "Indexer should have indexed the messages";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1,
+		    2 => 1
+		}
+	    }
+    }, $res);
 }
 
 sub test_8bit_sphinx
