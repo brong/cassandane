@@ -47,6 +47,7 @@ use DateTime;
 use POSIX qw(:errno_h);
 use Cassandane::Util::Log;
 use Cassandane::Util::Wait;
+use Cassandane::Util::Socket;
 use Data::Dumper;
 
 use lib '.';
@@ -1112,6 +1113,92 @@ sub test_mgr_early_death
 		$uidvalidity => {
 		    1 => 1,
 		    2 => 1
+		}
+	    }
+    }, $res);
+}
+
+sub sphinxmgr_request
+{
+    my ($instance, @args) = @_;
+
+    my $mgr_sock = $instance->{basedir} .  "/conf/socket/sphinxmgr";
+    my $sock = create_client_socket('unix', undef, $mgr_sock)
+	or die "Cannot connect to sphinxmgr: $!";
+
+    my $req = join(' ', @args) . "\r\n";
+    $sock->syswrite($req);
+
+    my $resp;
+    $sock->sysread($resp, 1024);
+
+    $sock->close();
+
+    die "No response from sphinxmgr" unless defined $resp;
+    die "Sphinxmgr returned error: $resp" unless ($resp =~ m/^OK /);
+
+    $resp =~ s/^OK //;
+    $resp =~ s/\r\n$//;
+    return $resp;
+}
+
+sub test_mgr_stop_race
+    :RollingSquatter
+    :Sphinx
+{
+    my ($self, $dumper) = @_;
+
+    xlog "test race between cyr_sphinxmgr shutting";
+    xlog "down and starting up a searched";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Check the Sphinx socket does not exist";
+    my $sock = sphinx_socket_path($self->{instance}, $mboxname);
+    die "Socket $sock exists, expecting not" if ( -e $sock );
+
+    xlog "Append a message";
+    my %exp;
+    $exp{A} = $self->make_message("Message A");
+
+    xlog "Check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the message";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the Sphinx socket does exist";
+    die "Socket $sock does not exist" if ( ! -e $sock );
+
+    xlog "Indexer should have indexed the messages";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1
+		}
+	    }
+    }, $res);
+
+    xlog "Tell sphinxmgr to initiate shutdown, then immediately restart";
+    xlog "to hit the race window between asynchronously shutting down";
+    xlog "and starting a new one";
+    sphinxmgr_request($self->{instance}, 'STOP', $mboxname);
+    my $sock2 = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
+    xlog "sphinxmgr responded \"$sock2\"";
+    $self->assert( -e $sock2, "Socket $sock2 should exist");
+    $self->assert_str_equals($sock, $sock2, "Socket $sock2 should be as predicted");
+
+    xlog "searchd is contactable";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({
+	    $mboxname => {
+		$uidvalidity => {
+		    1 => 1
 		}
 	    }
     }, $res);
