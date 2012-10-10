@@ -2429,6 +2429,7 @@ sub test_sphinx_xconvmultisort_cjk
 					  . "=99=94=EA=B0=80 =EC=9E=88=EC=A7=\r\n"
 					  . "=80=EB=A7=8C, =EB=8C=80=EB=B6=80=\r\n"
 					  . "=EB=B6=84=EC=9D=98, =EC=A3=BC\r\n");
+    $exp{D} = $self->make_message('=?utf-8?q?Chinese=E8=AF=B6Subject?=');
 
     xlog "Index the messages";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname_int);
@@ -2468,6 +2469,18 @@ sub test_sphinx_xconvmultisort_cjk
 	xconvmulti => [ [ $mboxname_ext, 3 ] ],
 	uidvalidity => { $mboxname_ext => $uidvalidity }
     }, $res);
+
+    xlog "Search for U+8BF6 which doesn't seem to have a name";
+    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Literal => "\xe8\xaf\xb6" } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 4 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+
 }
 
 1;
