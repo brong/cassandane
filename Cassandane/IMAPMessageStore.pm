@@ -582,6 +582,36 @@ sub xconvmeta
     return $results;
 }
 
+sub xsnippets
+{
+    my ($self, @args) = @_;
+
+    my $results = {};
+    my %handlers =
+    (
+	snippet => sub
+	{
+	    # expecting: * SNIPPET <mboxname> <uidvalidity> <uid> <partname> <string>
+	    my ($response, $rr) = @_;
+	    $results->{snippet} ||= [];
+	    push(@{$results->{snippet}}, {
+		mailbox => $rr->[0],
+		uidvalidity => $rr->[1],
+		uid => $rr->[2],
+		part => $rr->[3],
+		snippet => $rr->[4],
+	    });
+	},
+    );
+
+    $self->connect();
+
+    $self->{client}->_imap_cmd("xsnippets", 0, \%handlers, @args)
+	or return undef;
+
+    return $results;
+}
+
 sub xstats
 {
     my ($self) = @_;

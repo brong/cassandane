@@ -2483,4 +2483,123 @@ sub test_sphinx_xconvmultisort_cjk
 
 }
 
+sub test_sphinx_xsnippets
+    :XConvMultiSort
+{
+    my ($self) = @_;
+
+    xlog "Test the XSNIPPETS command";
+    # Note, Squat does not support XSNIPPETS
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res = $talk->status($mboxname_ext, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Append messages";
+    my %exp;
+    $exp{A} = $self->make_message('synth cred',
+				  from => Cassandane::Address->new(
+					    name => "Denim",
+					    localpart => 'scenester',
+					    domain => 'banksy.com'
+				  ),
+				  body => "occupy ethical\r\n");
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
+
+    xlog "Check the messages got there";
+    $self->check_messages(\%exp);
+
+    my @cases = (
+	{
+	    query => [ 'from', 'banksy' ],
+	    expected => [
+		[ 'FROM', 'Denim &lt;scenester@<b>banksy</b>.com&gt;' ]
+	    ]
+	},
+	{
+	    query => [ 'subject', 'cred' ],
+	    expected => [
+		[ 'SUBJECT', 'synth <b>cred</b>' ]
+	    ]
+	},
+	{
+	    query => [ 'body', 'ethical' ],
+	    expected => [
+		[ 'BODY', 'occupy <b>ethical</b> ' ]
+	    ]
+	},
+	# TEXT matches any field
+	{
+	    query => [ 'text', 'ethical' ],
+	    expected => [
+		[ 'BODY', 'occupy <b>ethical</b> ' ]
+	    ]
+	},
+	{
+	    query => [ 'text', 'cred' ],
+	    expected => [
+		[ 'SUBJECT', 'synth <b>cred</b>' ],
+		[ 'HEADERS', " ... -Transfer-Encoding: 7bit " .
+			     "Subject: synth <b>cred</b> " .
+			     "From: Denim &lt;scenester\@banksy ... " ]
+	    ]
+	},
+	{
+	    query => [ 'text', 'denim' ],
+	    expected => [
+		[ 'FROM', '<b>Denim</b> &lt;scenester@banksy.com&gt;' ],
+		[ 'HEADERS', " ... : 7bit " .
+			     "Subject: synth cred " .
+			     "From: <b>Denim</b> &lt;scenester\@banksy.com&gt ... " ]
+	    ]
+	},
+	{
+	    query => [ 'from', 'banksy', 'subject', 'cred' ],
+	    expected => [
+		[ 'FROM', 'Denim &lt;scenester@<b>banksy</b>.com&gt;' ],
+		[ 'SUBJECT', 'synth <b>cred</b>' ]
+	    ]
+	},
+	{
+	    query => [ 'or', 'from', 'banksy', 'subject', 'cred' ],
+	    expected => [
+		[ 'FROM', 'Denim &lt;scenester@<b>banksy</b>.com&gt;' ],
+		[ 'SUBJECT', 'synth <b>cred</b>' ]
+	    ]
+	},
+    );
+
+    foreach my $c (@cases)
+    {
+	xlog "Run XSNIPPETS, query " . join(' ', @{$c->{query}});
+	$res = $self->{store}->xsnippets(
+	    "(($mboxname_ext $uidvalidity (1)))",
+	    'utf-8',
+	    @{$c->{query}})
+	    or die "XSNIPPETS failed: $@";
+	delete $res->{highestmodseq} if defined $res;
+	$self->assert_deep_equals({
+	    snippet => [
+		map {
+		    {
+			mailbox => $mboxname_ext,
+			uidvalidity => $uidvalidity,
+			uid => 1,
+			part => $_->[0],
+			snippet => $_->[1],
+		    };
+		} @{$c->{expected}}
+	    ]
+	}, $res);
+    }
+}
+
 1;
