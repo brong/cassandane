@@ -243,6 +243,25 @@ sub sphinx_pid_file
     return $instance->{basedir} . "/sphinx/user/$hash/$user/searchd.pid";
 }
 
+sub sphinx_list_running
+{
+    my ($instance) = @_;
+
+    my @users;
+    my @cmd = ( 'find', $instance->{basedir}, '-name', 'searchd.pid' );
+    open FIND, '-|', @cmd
+	or die "Cannot run find: $!";
+    while (<FIND>)
+    {
+	my ($user) = m/\/user\/.\/([^\/]+)\/searchd.pid$/;
+	next if !defined $user;
+	next if (! -e sphinx_socket_path($instance, "user.$user"));
+	push(@users, $user);
+    }
+    close FIND;
+    return sort { $a cmp $b } @users;
+}
+
 sub sphinx_dump
 {
     my ($instance, $mbox) = @_;
@@ -1202,6 +1221,68 @@ sub test_mgr_stop_race
 		}
 	    }
     }, $res);
+}
+
+Cassandane::Cyrus::TestCase::magic(SphinxMgrMaxChildren => sub {
+    shift->config_set(sphinxmgr_max_children => '5');
+});
+
+sub test_mgr_max_children
+    :RollingSquatter
+    :Sphinx
+    :SphinxMgrMaxChildren
+{
+    my ($self, $dumper) = @_;
+
+    xlog "test cyr_sphinxmgr enforcing the max_children parameter";
+
+    my $talk = $self->{store}->get_client();
+    my $admintalk = $self->{adminstore}->get_client();
+
+    # 1 more than max_children, carefully not in alphabetic order
+    my @users = ( 'cassandane', 'synth', 'fixie',
+		  'ethnic', 'etsy', 'iphone' );
+
+    xlog "creating users";
+    my %uidv;
+    foreach my $user (@users)
+    {
+	if ($user ne 'cassandane')
+	{
+	    $self->{instance}->create_user($user);
+	}
+	my $folder = "user." . $user;
+	my $res = $admintalk->status($folder, ['uidvalidity']);
+	$uidv{$folder} = $res->{uidvalidity};
+    }
+
+    xlog "Initially there are no running searchds";
+    my @running = sphinx_list_running($self->{instance});
+    $self->assert_deep_equals([], \@running);
+
+    # @lru simulates the LRU list in sphinxmgr
+    # the head is the least recently used, the tail
+    # is the most recently used
+    my @lru;
+    my $N1 = 23;
+    for (my $i = 0 ; $i < $N1 ; $i++)
+    {
+	my $user = $users[$i % scalar(@users)];
+
+	xlog "Ask sphinxmgr to start a searchd";
+	my $sock = sphinxmgr_request($self->{instance}, 'GETSOCK', "user.$user");
+	$self->assert( -e $sock );
+
+	shift(@lru) if (scalar @lru == 5);
+	push(@lru, $user);
+
+	my @exp_running = sort { $a cmp $b } @lru;
+	@running = sphinx_list_running($self->{instance});
+	xlog "lru list: " . join(' ', @lru);
+	xlog "expect to see running: " . join(' ', @exp_running);
+	xlog "actually running: " . join(' ', @running);
+	$self->assert_deep_equals(\@exp_running, \@running);
+    }
 }
 
 sub test_8bit_sphinx
