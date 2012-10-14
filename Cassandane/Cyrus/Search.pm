@@ -811,7 +811,7 @@ sub rolling_test_common
 
     $self->{sync_client_pid} = $self->{instance}->run_command(
 		    { cyrus => 1, background => 1},
-		    'squatter', '-v', '-R', '-f');
+		    'squatter', '-v', '-R', '-d');
 
     xlog "appending a message";
     my %exp;
@@ -923,7 +923,7 @@ sub test_rolling_many_sphinx
 
     $self->{sync_client_pid} = $self->{instance}->run_command(
 		    { cyrus => 1, background => 1},
-		    'squatter', '-v', '-R', '-f');
+		    'squatter', '-v', '-R', '-d');
 
     xlog "check the Sphinx sockets do no exist";
     foreach my $user (@users)
