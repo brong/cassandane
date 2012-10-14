@@ -2999,4 +2999,180 @@ sub test_sphinx_xsnippets
     }
 }
 
+sub write_synclog_file
+{
+    my ($synclogfile, @mboxes) = @_;
+
+    open SYNCLOG, '>', $synclogfile
+	or die "Cannot open $synclogfile for writing: $!";
+    foreach my $mbox (@mboxes)
+    {
+	printf SYNCLOG "APPEND %s\n", $mbox;
+    }
+    close SYNCLOG;
+}
+
+sub expected_dump
+{
+    my ($base, $uidv, %counts) = @_;
+
+    my $exp = {};
+    foreach my $f (keys %counts)
+    {
+	my $count = $counts{$f};
+	$exp->{"$base.$f"} = { $uidv->{$f} => { map { $_ => 1 } (1..$count) } };
+    }
+    return $exp;
+}
+
+sub test_squatter_synclog_mode
+    :RollingSquatter
+    :Sphinx
+{
+    my ($self) = @_;
+
+    xlog "test squatter synclog mode with Sphinx";
+
+    my $talk = $self->{store}->get_client();
+    my $base_ext = 'INBOX';
+    my $base_int = 'user.cassandane';
+    my @folders = ( 'etsy', 'quinoa', 'dreamcatcher',
+		    'brooklyn', 'shoreditch', 'williamsburg' );
+
+    xlog "Creating folders";
+    my %uidv;
+    foreach my $f (@folders)
+    {
+	my $folder = "$base_ext.$f";
+	$talk->create($folder)
+	    or die "Cannot create $folder: $@";
+	my $res = $talk->status($folder, ['uidvalidity']);
+	$uidv{$f} = $res->{uidvalidity};
+    }
+
+    my %exp = ( map { $_ => {} } @folders );
+
+    xlog "$folders[0] will remain empty";
+
+    my $f = $folders[1];
+    xlog "$f will have one indexed message";
+    $self->{store}->set_folder("$base_ext.$f");
+    $self->{gen}->set_next_uid(1);
+    $exp{$f}->{A} = $self->make_message("Message A");
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$base_int.$f");
+
+    $f = $folders[2];
+    xlog "$f will have two indexed messages";
+    $self->{store}->set_folder("$base_ext.$f");
+    $self->{gen}->set_next_uid(1);
+    $exp{$f}->{B} = $self->make_message("Message B");
+    $exp{$f}->{C} = $self->make_message("Message C");
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$base_int.$f");
+
+    $f = $folders[3];
+    xlog "$f will have one indexed message and one unindexed";
+    $self->{store}->set_folder("$base_ext.$f");
+    $self->{gen}->set_next_uid(1);
+    $exp{$f}->{D} = $self->make_message("Message D");
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$base_int.$f");
+    $exp{$f}->{E} = $self->make_message("Message E");
+
+    $f = $folders[4];
+    xlog "$f will have two unindexed messages";
+    $self->{store}->set_folder("$base_ext.$f");
+    $self->{gen}->set_next_uid(1);
+    $exp{$f}->{F} = $self->make_message("Message F");
+    $exp{$f}->{G} = $self->make_message("Message G");
+
+    $f = $folders[5];
+    xlog "$f will have two unindexed messages";
+    $self->{store}->set_folder("$base_ext.$f");
+    $self->{gen}->set_next_uid(1);
+    $exp{$f}->{H} = $self->make_message("Message H");
+    $exp{$f}->{I} = $self->make_message("Message I");
+
+    xlog "Check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$base_ext.$folder");
+	$self->check_messages($exp{$folder});
+    }
+
+    xlog "Check that the messages we expect were indexed";
+    my $res = sphinx_dump($self->{instance});
+    my $expdump = expected_dump($base_int, \%uidv,
+	# no messages in $folders[0]
+	$folders[1] => 1,
+	$folders[2] => 2,
+	$folders[3] => 1,
+	# no indexed messages in $folders[4]
+	# no indexed messages in $folders[5]
+    );
+    $self->assert_deep_equals($expdump, $res);
+
+    xlog "Build an empty synclog file";
+    my $synclogfile = $self->{instance}->{basedir} . "test.synclog";
+    write_synclog_file($synclogfile);
+
+    xlog "Run squatter in synclog mode";
+    $self->{instance}->run_command({ cyrus => 1 },
+		    'squatter', '-v', '-f', $synclogfile);
+
+    xlog "Check that synclogfile still exists";
+    $self->assert( -f $synclogfile );
+
+    xlog "Check that no more messages were indexed";
+    $res = sphinx_dump($self->{instance});
+    $self->assert_deep_equals(expected_dump($base_int, \%uidv,
+	# no messages in $folders[0]
+	$folders[1] => 1,
+	$folders[2] => 2,
+	$folders[3] => 1,
+	# no indexed messages in $folders[4]
+	# no indexed messages in $folders[5]
+    ), $res);
+
+    xlog "Build a synclog file mentioning $folders[5] only";
+    write_synclog_file($synclogfile, "$base_int.$folders[5]");
+
+    xlog "Run squatter in synclog mode";
+    $self->{instance}->run_command({ cyrus => 1 },
+		    'squatter', '-v', '-f', $synclogfile);
+
+    xlog "Check that synclogfile still exists";
+    $self->assert( -f $synclogfile );
+
+    xlog "Check that $folders[5] was indexed and no others";
+    $res = sphinx_dump($self->{instance});
+    $self->assert_deep_equals(expected_dump($base_int, \%uidv,
+	# no messages in $folders[0]
+	$folders[1] => 1,
+	$folders[2] => 2,
+	$folders[3] => 1,
+	# no indexed messages in $folders[4]
+	$folders[5] => 2
+    ), $res);
+
+    xlog "Build a synclog file mentioning all the folders";
+    write_synclog_file($synclogfile, map { "$base_int.$_" } @folders);
+
+    xlog "Run squatter in synclog mode";
+    $self->{instance}->run_command({ cyrus => 1 },
+		    'squatter', '-v', '-f', $synclogfile);
+
+    xlog "Check that synclogfile still exists";
+    $self->assert( -f $synclogfile );
+
+    xlog "Check that all folders were indexed";
+    $res = sphinx_dump($self->{instance});
+    $self->assert_deep_equals(expected_dump($base_int, \%uidv,
+	# no messages in $folders[0]
+	$folders[1] => 1,
+	$folders[2] => 2,
+	$folders[3] => 2,
+	$folders[4] => 2,
+	$folders[5] => 2,
+    ), $res);
+}
+
 1;
