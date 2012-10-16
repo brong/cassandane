@@ -524,8 +524,13 @@ sub _pid_file
 {
     my ($self, $name) = @_;
 
+    # Default pid file is the Cyrus master pidfile
     $name ||= 'master';
 
+    # Allow passing any pidfile anywhere
+    return $name if ($name =~ m/^\//);
+
+    # A bare name means a pidfile in this instance's run/ dir
     return $self->{basedir} . "/run/$name.pid";
 }
 
