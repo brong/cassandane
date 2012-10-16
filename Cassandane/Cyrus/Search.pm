@@ -269,7 +269,12 @@ sub sphinx_dump
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
     my $sock = sphinx_socket_path($instance, $mbox);
 
-    return {} if ( ! -e $sock );
+    my $searchd_is_ours;
+    $searchd_is_ours = 1 if ( ! -e $sock );
+
+    $instance->run_command({ cyrus => 1 },
+			   'squatter', '-c', 'start', $mbox || 'user.cassandane')
+	if $searchd_is_ours;
 
     $instance->run_command(
 	    { redirects => { stdout => $filename } },
@@ -297,6 +302,10 @@ sub sphinx_dump
 	$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
     }
     close RESULTS;
+
+    $instance->run_command({ cyrus => 1 },
+			   'squatter', '-c', 'stop', $mbox || 'user.cassandane')
+	if $searchd_is_ours;
 
     return $res;
 }
@@ -902,7 +911,6 @@ sub test_rolling_many_sphinx
     my ($self, $dumper) = @_;
 
     xlog "test squatter rolling mode with Sphinx and many users";
-    xlog "which will start up several searchd instances";
 
     my $admintalk = $self->{adminstore}->get_client();
     my @users = ( qw(letterpress williamsburg narwhal irony
@@ -924,13 +932,6 @@ sub test_rolling_many_sphinx
     $self->{sync_client_pid} = $self->{instance}->run_command(
 		    { cyrus => 1, background => 1},
 		    'squatter', '-v', '-R', '-d');
-
-    xlog "check the Sphinx sockets do no exist";
-    foreach my $user (@users)
-    {
-	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
-	die "Socket $sock exists, expecting not" if ( -e $sock );
-    }
 
     xlog "appending messages";
     my $exp = {};
@@ -960,13 +961,6 @@ sub test_rolling_many_sphinx
     }
 
     $self->replication_wait('squatter');
-
-    xlog "check the Sphinx sockets do exist";
-    foreach my $user (@users)
-    {
-	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
-	die "Socket $sock does not exist" if ( ! -e $sock );
-    }
 
     xlog "Indexer should have indexed the messages";
     # Note that we have to call sphinx_dump once for each user
@@ -1014,9 +1008,6 @@ sub test_mgr_timeout
 
     xlog "Index the message";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
-
-    xlog "Check the Sphinx socket does exist";
-    die "Socket $sock does not exist" if ( ! -e $sock );
 
     xlog "Indexer should have indexed the messages";
     $res = sphinx_dump($self->{instance}, $mboxname);
@@ -1087,9 +1078,6 @@ sub test_mgr_early_death
 
     xlog "Index the message";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
-
-    xlog "Check the Sphinx socket does exist";
-    die "Socket $sock does not exist" if ( ! -e $sock );
 
     xlog "Indexer should have indexed the messages";
     $res = sphinx_dump($self->{instance}, $mboxname);
@@ -1189,9 +1177,6 @@ sub test_mgr_stop_race
 
     xlog "Index the message";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
-
-    xlog "Check the Sphinx socket does exist";
-    die "Socket $sock does not exist" if ( ! -e $sock );
 
     xlog "Indexer should have indexed the messages";
     $res = sphinx_dump($self->{instance}, $mboxname);

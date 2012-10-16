@@ -155,4 +155,11 @@
    fun:global_sasl_init
    fun:main
 }
-
+{
+   fucking_mysterious_master_leak
+   Memcheck:Leak
+   fun:malloc
+   fun:xmalloc
+   fun:strconcat
+   fun:main
+}
