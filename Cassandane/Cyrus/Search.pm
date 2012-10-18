@@ -3074,4 +3074,60 @@ sub test_squatter_synclog_mode
     ), $res);
 }
 
+sub test_sphinx_fmindex_sighup
+{
+    my ($self) = @_;
+
+    xlog "Tests the cunning new hack in fmindex which SIGHUPs searchd";
+    xlog "So that we can index a message regardless of whether or not";
+    xlog "Searchd is currently running";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append a message";
+    my %exp;
+    $exp{1} = $self->make_message("quinoa");
+    xlog "check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Searchd is not running";
+    my $pidfile = sphinx_pid_file($self->{instance}, $mboxname);
+    $self->assert( ! -f $pidfile, "pidfile $pidfile should not exist");
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname);
+
+    xlog "Searchd is still not running";
+    $self->assert( ! -f $pidfile, "pidfile $pidfile should not exist");
+
+    xlog "Check the message was indexed";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
+
+    xlog "Ask sphinxmgr to start a searchd";
+    my $sock = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
+    $self->assert( -e $sock );
+
+    xlog "Append another message";
+    $exp{2} = $self->make_message("cosby sweater");
+
+    xlog "check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname);
+
+    xlog "Searchd is still running";
+    $self->assert( -f $pidfile, "pidfile $pidfile should not exist");
+
+    xlog "Check the message was indexed";
+    $res = sphinx_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => { $uidvalidity => {
+				1 => 1, 2 => 1 } } }, $res);
+}
+
 1;
