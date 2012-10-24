@@ -44,10 +44,9 @@ use strict;
 use warnings;
 use Cwd qw(abs_path);
 use DateTime;
-use POSIX qw(:errno_h :signal_h);
+use POSIX qw(:errno_h);
 use Cassandane::Util::Log;
 use Cassandane::Util::Wait;
-use Cassandane::Util::Socket;
 use Data::Dumper;
 
 use lib '.';
@@ -219,49 +218,6 @@ sub sphinx_socket_path
     return $instance->{basedir} . "/conf/socket/sphinx.$user";
 }
 
-sub sphinx_config_path
-{
-    my ($instance, $mbox) = @_;
-
-    my $user;
-    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
-    $user ||= 'cassandane';
-    my $hash = substr($user, 0, 1);
-
-    return $instance->{basedir} . "/sphinx/user/$hash/$user/sphinx.conf";
-}
-
-sub sphinx_pid_file
-{
-    my ($instance, $mbox) = @_;
-
-    my $user;
-    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
-    $user ||= 'cassandane';
-    my $hash = substr($user, 0, 1);
-
-    return $instance->{basedir} . "/sphinx/user/$hash/$user/searchd.pid";
-}
-
-sub sphinx_list_running
-{
-    my ($instance) = @_;
-
-    my @users;
-    my @cmd = ( 'find', $instance->{basedir}, '-name', 'searchd.pid' );
-    open FIND, '-|', @cmd
-	or die "Cannot run find: $!";
-    while (<FIND>)
-    {
-	my ($user) = m/\/user\/.\/([^\/]+)\/searchd.pid$/;
-	next if !defined $user;
-	next if (! -e sphinx_socket_path($instance, "user.$user"));
-	push(@users, $user);
-    }
-    close FIND;
-    return sort { $a cmp $b } @users;
-}
-
 sub sphinx_dump
 {
     my ($instance, $mbox) = @_;
@@ -269,12 +225,7 @@ sub sphinx_dump
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
     my $sock = sphinx_socket_path($instance, $mbox);
 
-    my $searchd_is_ours;
-    $searchd_is_ours = 1 if ( ! -e $sock );
-
-    $instance->run_command({ cyrus => 1 },
-			   'squatter', '-c', 'start', $mbox || 'user.cassandane')
-	if $searchd_is_ours;
+    return {} if ( ! -e $sock );
 
     $instance->run_command(
 	    { redirects => { stdout => $filename } },
@@ -302,10 +253,6 @@ sub sphinx_dump
 	$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
     }
     close RESULTS;
-
-    $instance->run_command({ cyrus => 1 },
-			   'squatter', '-c', 'stop', $mbox || 'user.cassandane')
-	if $searchd_is_ours;
 
     return $res;
 }
@@ -911,6 +858,7 @@ sub test_rolling_many_sphinx
     my ($self, $dumper) = @_;
 
     xlog "test squatter rolling mode with Sphinx and many users";
+    xlog "which will start up several searchd instances";
 
     my $admintalk = $self->{adminstore}->get_client();
     my @users = ( qw(letterpress williamsburg narwhal irony
@@ -932,6 +880,13 @@ sub test_rolling_many_sphinx
     $self->{sync_client_pid} = $self->{instance}->run_command(
 		    { cyrus => 1, background => 1},
 		    'squatter', '-v', '-R', '-d');
+
+    xlog "check the Sphinx sockets do no exist";
+    foreach my $user (@users)
+    {
+	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
+	die "Socket $sock exists, expecting not" if ( -e $sock );
+    }
 
     xlog "appending messages";
     my $exp = {};
@@ -962,6 +917,13 @@ sub test_rolling_many_sphinx
 
     $self->replication_wait('squatter');
 
+    xlog "check the Sphinx sockets do exist";
+    foreach my $user (@users)
+    {
+	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
+	die "Socket $sock does not exist" if ( ! -e $sock );
+    }
+
     xlog "Indexer should have indexed the messages";
     # Note that we have to call sphinx_dump once for each user
     foreach my $user (@users)
@@ -972,215 +934,6 @@ sub test_rolling_many_sphinx
 	$self->assert_deep_equals({
 		$folder => { $uidv{$folder} => { map { $_ => 1 } (1..3) } }
 	}, $res);
-    }
-}
-
-
-Cassandane::Cyrus::TestCase::magic(SphinxMgrFastTimeout => sub {
-    shift->config_set(sphinxmgr_timeout => '5');
-});
-
-sub test_mgr_timeout
-    :RollingSquatter
-    :SphinxMgrFastTimeout
-    :Sphinx
-{
-    my ($self, $dumper) = @_;
-
-    xlog "test cyr_sphinxmgr starting up and shutting down a searchd";
-
-    my $talk = $self->{store}->get_client();
-    my $mboxname = 'user.cassandane';
-
-    xlog "Check the Sphinx socket does not exist";
-    my $sock = sphinx_socket_path($self->{instance}, $mboxname);
-    $self->assert( ! -e $sock, "Socket $sock should exist");
-
-    xlog "Ask sphinxmgr to start a searchd";
-    my $sock2 = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
-    $self->assert_str_equals($sock, $sock2, "Socket $sock2 should be as predicted");
-    $self->assert( -e $sock2, "Socket $sock2 should exist");
-
-    my $pidfile = sphinx_pid_file($self->{instance}, $mboxname);
-    $self->assert( -f $pidfile, "pidfile $pidfile should exist");
-    my $pid = $self->{instance}->_read_pid_file($pidfile);
-
-    xlog "searchd should quietly go away after 5-10 seconds";
-    timed_wait(sub { ( ! -e $pidfile ) },
-	       description => "searchd to be timed out");
-
-    xlog "Ask sphinxmgr to return the same searchd";
-    xlog "Sphinxmgr should start a new one for us.";
-    my $sock3 = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
-    $self->assert_str_equals($sock, $sock3, "Socket $sock3 should be as predicted");
-    $self->assert( -e $sock3, "Socket $sock3 should exist");
-    $self->assert( -f $pidfile, "pidfile $pidfile exists again");
-    $self->assert_not_equals($pid, $self->{instance}->_read_pid_file($pidfile),
-			     "The pid is different");
-
-    xlog "searchd should quietly go away after 5-10 seconds";
-    timed_wait(sub { ( ! -e $pidfile ) },
-	       description => "searchd to be timed out");
-}
-
-sub test_mgr_early_death
-    :RollingSquatter
-    :Sphinx
-{
-    my ($self, $dumper) = @_;
-
-    xlog "test cyr_sphinxmgr detecting the premature death of a searchd";
-
-    my $talk = $self->{store}->get_client();
-    my $mboxname = 'user.cassandane';
-
-    xlog "Check the Sphinx socket does not exist";
-    my $sock = sphinx_socket_path($self->{instance}, $mboxname);
-    $self->assert( ! -e $sock, "Socket $sock should exist");
-
-    xlog "Ask sphinxmgr to start a searchd";
-    my $sock2 = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
-    $self->assert_str_equals($sock, $sock2, "Socket $sock2 should be as predicted");
-    $self->assert( -e $sock2, "Socket $sock2 should exist");
-
-    my $pidfile = sphinx_pid_file($self->{instance}, $mboxname);
-    my $pid = $self->{instance}->_read_pid_file($pidfile);
-
-    xlog "Gracefully shut down the searchd behind sphinxmgr's back";
-    kill SIGTERM, $pid;
-
-    xlog "Wait until the Sphinx pid file does not exist";
-    timed_wait(sub { ( ! -e $pidfile ) },
-	       description => "searchd to shut down");
-
-    xlog "Ask sphinxmgr to return the same searchd";
-    xlog "Sphinxmgr should detect the loss of the old one";
-    xlog "and start a new one for us.";
-    my $sock3 = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
-    $self->assert_str_equals($sock, $sock3, "Socket $sock3 should be as predicted");
-    $self->assert( -e $sock3, "Socket $sock3 should exist");
-    $self->assert( -f $pidfile, "pidfile $pidfile exists again");
-    $self->assert_not_equals($pid, $self->{instance}->_read_pid_file($pidfile),
-			     "The pid is different");
-}
-
-sub sphinxmgr_request
-{
-    my ($instance, @args) = @_;
-
-    my $mgr_sock = $instance->{basedir} .  "/conf/socket/sphinxmgr";
-    my $sock = create_client_socket('unix', undef, $mgr_sock)
-	or die "Cannot connect to sphinxmgr: $!";
-
-    my $req = join(' ', @args) . "\r\n";
-    $sock->syswrite($req);
-
-    my $resp;
-    $sock->sysread($resp, 1024);
-
-    $sock->close();
-
-    die "No response from sphinxmgr" unless defined $resp;
-    die "Sphinxmgr returned error: $resp" unless ($resp =~ m/^OK /);
-
-    $resp =~ s/^OK //;
-    $resp =~ s/\r\n$//;
-    return $resp;
-}
-
-sub test_mgr_stop_race
-    :RollingSquatter
-    :Sphinx
-{
-    my ($self, $dumper) = @_;
-
-    xlog "test race between cyr_sphinxmgr shutting";
-    xlog "down and starting up a searched";
-
-    my $talk = $self->{store}->get_client();
-    my $mboxname = 'user.cassandane';
-
-    xlog "Check the Sphinx socket does not exist";
-    my $sock = sphinx_socket_path($self->{instance}, $mboxname);
-    $self->assert( ! -e $sock );
-
-    xlog "Ask sphinxmgr to start a searchd";
-    my $sock2 = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
-    $self->assert_str_equals($sock, $sock2, "Socket $sock2 should be as predicted");
-    $self->assert( -e $sock2, "Socket $sock2 should exist");
-
-    xlog "Tell sphinxmgr to initiate shutdown, then immediately restart";
-    xlog "to hit the race window between asynchronously shutting down";
-    xlog "and starting a new one";
-    sphinxmgr_request($self->{instance}, 'STOP', $mboxname);
-    my $sock3 = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
-    xlog "sphinxmgr responded \"$sock3\"";
-    $self->assert_str_equals($sock, $sock3, "Socket $sock3 should be as predicted");
-    $self->assert( -e $sock3, "Socket $sock3 should exist");
-
-    xlog "searchd is contactable";
-    sphinx_dump($self->{instance}, $mboxname);
-}
-
-Cassandane::Cyrus::TestCase::magic(SphinxMgrMaxChildren => sub {
-    shift->config_set(sphinxmgr_max_children => '5');
-});
-
-sub test_mgr_max_children
-    :RollingSquatter
-    :Sphinx
-    :SphinxMgrMaxChildren
-{
-    my ($self, $dumper) = @_;
-
-    xlog "test cyr_sphinxmgr enforcing the max_children parameter";
-
-    my $talk = $self->{store}->get_client();
-    my $admintalk = $self->{adminstore}->get_client();
-
-    # 1 more than max_children, carefully not in alphabetic order
-    my @users = ( 'cassandane', 'synth', 'fixie',
-		  'ethnic', 'etsy', 'iphone' );
-
-    xlog "creating users";
-    my %uidv;
-    foreach my $user (@users)
-    {
-	if ($user ne 'cassandane')
-	{
-	    $self->{instance}->create_user($user);
-	}
-	my $folder = "user." . $user;
-	my $res = $admintalk->status($folder, ['uidvalidity']);
-	$uidv{$folder} = $res->{uidvalidity};
-    }
-
-    xlog "Initially there are no running searchds";
-    my @running = sphinx_list_running($self->{instance});
-    $self->assert_deep_equals([], \@running);
-
-    # @lru simulates the LRU list in sphinxmgr
-    # the head is the least recently used, the tail
-    # is the most recently used
-    my @lru;
-    my $N1 = 23;
-    for (my $i = 0 ; $i < $N1 ; $i++)
-    {
-	my $user = $users[$i % scalar(@users)];
-
-	xlog "Ask sphinxmgr to start a searchd";
-	my $sock = sphinxmgr_request($self->{instance}, 'GETSOCK', "user.$user");
-	$self->assert( -e $sock );
-
-	shift(@lru) if (scalar @lru == 5);
-	push(@lru, $user);
-
-	my @exp_running = sort { $a cmp $b } @lru;
-	@running = sphinx_list_running($self->{instance});
-	xlog "lru list: " . join(' ', @lru);
-	xlog "expect to see running: " . join(' ', @exp_running);
-	xlog "actually running: " . join(' ', @running);
-	$self->assert_deep_equals(\@exp_running, \@running);
     }
 }
 
@@ -3072,62 +2825,6 @@ sub test_squatter_synclog_mode
 	$folders[4] => 2,
 	$folders[5] => 2,
     ), $res);
-}
-
-sub test_sphinx_fmindex_sighup
-{
-    my ($self) = @_;
-
-    xlog "Tests the cunning new hack in fmindex which SIGHUPs searchd";
-    xlog "So that we can index a message regardless of whether or not";
-    xlog "Searchd is currently running";
-
-    my $talk = $self->{store}->get_client();
-    my $mboxname = 'user.cassandane';
-
-    my $res = $talk->status($mboxname, ['uidvalidity']);
-    my $uidvalidity = $res->{uidvalidity};
-
-    xlog "append a message";
-    my %exp;
-    $exp{1} = $self->make_message("quinoa");
-    xlog "check the message got there";
-    $self->check_messages(\%exp);
-
-    xlog "Searchd is not running";
-    my $pidfile = sphinx_pid_file($self->{instance}, $mboxname);
-    $self->assert( ! -f $pidfile, "pidfile $pidfile should not exist");
-
-    xlog "Index run";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname);
-
-    xlog "Searchd is still not running";
-    $self->assert( ! -f $pidfile, "pidfile $pidfile should not exist");
-
-    xlog "Check the message was indexed";
-    $res = sphinx_dump($self->{instance}, $mboxname);
-    $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
-
-    xlog "Ask sphinxmgr to start a searchd";
-    my $sock = sphinxmgr_request($self->{instance}, 'GETSOCK', $mboxname);
-    $self->assert( -e $sock );
-
-    xlog "Append another message";
-    $exp{2} = $self->make_message("cosby sweater");
-
-    xlog "check the message got there";
-    $self->check_messages(\%exp);
-
-    xlog "Index run";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname);
-
-    xlog "Searchd is still running";
-    $self->assert( -f $pidfile, "pidfile $pidfile should not exist");
-
-    xlog "Check the message was indexed";
-    $res = sphinx_dump($self->{instance}, $mboxname);
-    $self->assert_deep_equals({ $mboxname => { $uidvalidity => {
-				1 => 1, 2 => 1 } } }, $res);
 }
 
 1;

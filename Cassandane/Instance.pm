@@ -524,13 +524,8 @@ sub _pid_file
 {
     my ($self, $name) = @_;
 
-    # Default pid file is the Cyrus master pidfile
     $name ||= 'master';
 
-    # Allow passing any pidfile anywhere
-    return $name if ($name =~ m/^\//);
-
-    # A bare name means a pidfile in this instance's run/ dir
     return $self->{basedir} . "/run/$name.pid";
 }
 
@@ -1354,18 +1349,6 @@ sub deliver
 sub _setup_for_search
 {
     my ($self, $engine) = @_;
-
-    if ($engine eq 'sphinx')
-    {
-	my @flags;
-	push(@flags, '-v') if get_verbose;
-	$self->add_start(name => 'sphinxmgr',
-			 argv => [ 'cyr_sphinxmgr', @flags ]);
-    }
-    elsif ($engine ne 'squat')
-    {
-	die "Unknown search engine \"$engine\"";
-    }
 
     $self->{config}->set(search_engine => $engine);
 }
