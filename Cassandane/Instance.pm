@@ -1030,6 +1030,14 @@ sub start
 
     xlog "started $self->{description}: cyrus version "
 	. Cassandane::Instance->get_version($self->{installation});
+
+    # Start the Sphinx searchd if necessary
+    if ($self->{config}->get('search_engine') eq 'sphinx')
+    {
+	my @vflags = map { '-v' } (1..get_verbose());
+	$self->run_command({ cyrus => 1 },
+			    'squatter', @vflags, '-c', 'start');
+    }
 }
 
 sub _compress_berkeley_crud
@@ -1252,6 +1260,14 @@ sub stop
     }
     $self->{_shutdowncallbacks} = [];
 
+    # Shut down the Sphinx search daemon if necessary
+    if ($self->{config}->get('search_engine') eq 'sphinx')
+    {
+	my @vflags = map { '-v' } (1..get_verbose());
+	$self->run_command({ cyrus => 1 },
+			    'squatter', @vflags, '-c', 'stop');
+    }
+
     $self->_compress_berkeley_crud();
     $self->_check_valgrind_logs();
     $self->_check_cores();
@@ -1351,6 +1367,11 @@ sub _setup_for_search
     my ($self, $engine) = @_;
 
     $self->{config}->set(search_engine => $engine);
+
+    if ($engine eq 'sphinx')
+    {
+	$self->{config}->set(sphinx_pidfile => '@basedir@/run/sphinx.pid');
+    }
 }
 
 # Runs a command with the given arguments.  The first argument is an
