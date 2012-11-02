@@ -1260,13 +1260,9 @@ sub stop
     }
     $self->{_shutdowncallbacks} = [];
 
-    # Shut down the Sphinx search daemon if necessary
-    if ($self->{config}->get('search_engine') eq 'sphinx')
-    {
-	my @vflags = map { '-v' } (1..get_verbose());
-	$self->run_command({ cyrus => 1 },
-			    'squatter', @vflags, '-c', 'stop');
-    }
+    # We don't need to explicitly shut down the Sphinx search daemon, as
+    # it dropped a pidfile in the instance's run/ directory and we just
+    # sent a SIGTERM to all such pidfiles.
 
     $self->_compress_berkeley_crud();
     $self->_check_valgrind_logs();
