@@ -209,13 +209,9 @@ sub test_squatter_squat
 
 sub sphinx_socket_path
 {
-    my ($instance, $mbox) = @_;
+    my ($instance) = @_;
 
-    my $user;
-    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
-    $user ||= 'cassandane';
-
-    return $instance->{basedir} . "/conf/socket/sphinx.$user";
+    return $instance->{basedir} . "/conf/socket/sphinx";
 }
 
 sub sphinx_dump
@@ -223,9 +219,39 @@ sub sphinx_dump
     my ($instance, $mbox) = @_;
 
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
-    my $sock = sphinx_socket_path($instance, $mbox);
+    my $sock = sphinx_socket_path($instance);
 
     return {} if ( ! -e $sock );
+
+    my $user;
+    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
+    $user ||= 'cassandane';
+
+    my $indexname = $user;
+    $indexname =~ s/@/AT/;
+    $indexname =~ s/^/X/;
+
+    # First check that the table exists
+    $instance->run_command(
+	    { redirects => { stdout => $filename } },
+	    'mysql',
+	    '--socket', $sock,
+	    '--batch',
+	    '--raw',
+	    '-e', "SHOW TABLES"
+	    );
+    open TABLES, '<', $filename
+	or die "Cannot open $filename for reading: $!";
+    my $found = 0;
+    while ($_ = readline(TABLES))
+    {
+	chomp;
+	my @a = split;
+	next if scalar(@a) != 2;
+	$found = 1 if ($a[0] eq $indexname);
+    }
+    close TABLES;
+    return {} if !$found;
 
     $instance->run_command(
 	    { redirects => { stdout => $filename } },
@@ -233,7 +259,7 @@ sub sphinx_dump
 	    '--socket', $sock,
 	    '--batch',
 	    '--raw',
-	    '-e', 'SELECT cyrusid FROM rt LIMIT 1000'
+	    '-e', "SELECT cyrusid FROM $indexname LIMIT 1000"
 	    );
 
     my $res = {};
@@ -858,7 +884,6 @@ sub test_rolling_many_sphinx
     my ($self, $dumper) = @_;
 
     xlog "test squatter rolling mode with Sphinx and many users";
-    xlog "which will start up several searchd instances";
 
     my $admintalk = $self->{adminstore}->get_client();
     my @users = ( qw(letterpress williamsburg narwhal irony
@@ -880,13 +905,6 @@ sub test_rolling_many_sphinx
     $self->{sync_client_pid} = $self->{instance}->run_command(
 		    { cyrus => 1, background => 1},
 		    'squatter', '-v', '-R', '-d');
-
-    xlog "check the Sphinx sockets do no exist";
-    foreach my $user (@users)
-    {
-	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
-	die "Socket $sock exists, expecting not" if ( -e $sock );
-    }
 
     xlog "appending messages";
     my $exp = {};
@@ -916,13 +934,6 @@ sub test_rolling_many_sphinx
     }
 
     $self->replication_wait('squatter');
-
-    xlog "check the Sphinx sockets do exist";
-    foreach my $user (@users)
-    {
-	my $sock = sphinx_socket_path($self->{instance}, "user.$user");
-	die "Socket $sock does not exist" if ( ! -e $sock );
-    }
 
     xlog "Indexer should have indexed the messages";
     # Note that we have to call sphinx_dump once for each user
@@ -1208,6 +1219,7 @@ sub test_sphinx_xconvmultisort
 
     my $res;
     my %uidvalidity;
+    my $hms = 0;
 
     my @folders = ( 'kale', 'smallbatch', 'tofu' );
 
@@ -1217,15 +1229,15 @@ sub test_sphinx_xconvmultisort
 	my $ff = "$mboxname_ext.$folder";
 	$talk->create($ff)
 	    or die "Cannot create folder $ff: $@";
-	$res = $talk->status($ff, ['uidvalidity']);
+	$res = $talk->status($ff, ['uidvalidity', 'highestmodseq']);
 	$uidvalidity{$ff} = $res->{uidvalidity};
+	$hms = $res->{highestmodseq} if ($hms < $res->{highestmodseq});
     }
 
     xlog "append some messages";
     my $exp = {};
     map { $exp->{$_} = {}; } @folders;
     my $uid = 1;
-    my $hms = 6;
     my $folderidx = 0;
     foreach my $d (@filter_data)
     {
