@@ -2775,7 +2775,7 @@ sub test_squatter_synclog_mode
     $self->assert_deep_equals($expdump, $res);
 
     xlog "Build an empty synclog file";
-    my $synclogfile = $self->{instance}->{basedir} . "test.synclog";
+    my $synclogfile = $self->{instance}->{basedir} . "/test.synclog";
     write_synclog_file($synclogfile);
 
     xlog "Run squatter in synclog mode";
