@@ -1032,7 +1032,7 @@ sub start
 	. Cassandane::Instance->get_version($self->{installation});
 
     # Start the Sphinx searchd if necessary
-    if ($self->{config}->get('search_engine') eq 'sphinx')
+    if ($self->{config}->get('search_engine', '') eq 'sphinx')
     {
 	my @vflags = map { '-v' } (1..get_verbose());
 	$self->run_command({ cyrus => 1 },

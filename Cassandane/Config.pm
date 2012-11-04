@@ -123,7 +123,7 @@ sub set
 
 sub get
 {
-    my ($self, $n) = @_;
+    my ($self, $n, $default) = @_;
     while (defined $self)
     {
 	my $v = $self->{params}->{$n};
@@ -131,7 +131,7 @@ sub get
 	    if defined $v;
 	$self = $self->{parent};
     }
-    return undef;
+    return $default;	# usually undef
 }
 
 sub get_bool
