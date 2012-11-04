@@ -47,6 +47,7 @@ use DateTime;
 use POSIX qw(:errno_h);
 use Cassandane::Util::Log;
 use Cassandane::Util::Wait;
+use Cassandane::Mboxname;
 use Data::Dumper;
 
 use lib '.';
@@ -216,20 +217,25 @@ sub sphinx_socket_path
 
 sub sphinx_dump
 {
-    my ($instance, $mbox) = @_;
+    my ($instance, $mb) = @_;
 
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
     my $sock = sphinx_socket_path($instance);
 
     return {} if ( ! -e $sock );
 
-    my $user;
-    ($user) = ($mbox =~ m/^user\.([^.]*)/) if (defined $mbox);
-    $user ||= 'cassandane';
+    $mb = Cassandane::Mboxname->new(
+		config => $instance->{config},
+		external => $mb)
+		unless ref $mb eq 'Cassandane::Mboxname';
+    $mb->{userid} ||= 'cassandane';
 
-    my $indexname = $user;
-    $indexname =~ s/@/AT/;
+    my $indexname = $mb->to_username();
+    $indexname =~ s/Z/Z5A/g;
+    $indexname =~ s/@/Z40/g;
+    $indexname =~ s/\./Z2E/g;
     $indexname =~ s/^/X/;
+    xlog "sphinx_dump: mbox \"$mb\" is indexname \"$indexname\"";
 
     # First check that the table exists
     $instance->run_command(
@@ -273,13 +279,12 @@ sub sphinx_dump
 	my $uid = 0 + pop(@a);
 	my $uidvalidity = 0 + pop(@a);
 	my $mboxname = join('.', @a);
-	next if (defined $mbox && $mboxname ne $mbox);
+	next if (defined $mb && $mboxname ne "$mb");
 	$res->{$mboxname} ||= {};
 	$res->{$mboxname}->{$uidvalidity} ||= {};
 	$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
     }
     close RESULTS;
-
     return $res;
 }
 
@@ -1884,6 +1889,78 @@ sub test_squatter_whitespace_sphinx
 		}
 	    }
 	}, $res);
+}
+
+sub test_squatter_domain_sphinx
+    :VirtualDomains
+{
+    my ($self) = @_;
+
+    xlog "test squatter on a folder name in a domain, with Sphinx";
+    my $talk = $self->{store}->get_client();
+    my $admintalk = $self->{adminstore}->get_client();
+    my @users = ( 'cosby@sweater.com', 'jean@shorts.org' );
+    my @mbs;
+    my %uidvalidity;
+    my $res;
+
+    map { push(@mbs, Cassandane::Mboxname->new(
+		config => $self->{instance}->{config},
+		username => $_)); } @users;
+
+    xlog "Create users";
+    foreach my $mb (@mbs)
+    {
+	$self->{instance}->create_user($mb->to_username);
+	$res = $admintalk->status($mb->to_external, ['uidvalidity']);
+	$uidvalidity{$mb} = $res->{uidvalidity};
+    }
+
+    xlog "Append some messages";
+    my %exp;
+    my $N1 = 10;
+    for (1..$N1)
+    {
+	my $mb = $mbs[($_-1) % scalar(@mbs)];
+	my $uid = int(($_-1) / scalar(@mbs))+1;
+	$self->{adminstore}->set_folder($mb->to_external);
+	my $msg = $self->make_message("Message $uid", store => $self->{adminstore});
+	$msg->set_attribute(uid => $uid);
+	$exp{$mb}->{$_} = $msg;
+    }
+
+    xlog "check the messages got there";
+    foreach my $mb (@mbs)
+    {
+	$self->{adminstore}->set_folder($mb->to_external);
+	$self->check_messages($exp{$mb}, store => $self->{adminstore});
+    }
+
+    xlog "Before first index, there is nothing to dump";
+    foreach my $mb (@mbs)
+    {
+	$res = sphinx_dump($self->{instance}, $mb);
+	$self->assert_deep_equals({}, $res);
+    }
+
+    xlog "Index run";
+    foreach my $mb (@mbs)
+    {
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mb");
+    }
+
+    xlog "Check the results of the index run";
+    foreach my $mb (@mbs)
+    {
+	$res = sphinx_dump($self->{instance}, $mb);
+	$self->assert_deep_equals({
+		"$mb" => {
+		    $uidvalidity{$mb} => {
+			map { $_ => 1 } (1..scalar(keys %{$exp{$mb}}))
+		    }
+		}
+	    }, $res);
+    }
 }
 
 sub test_sphinx_query_limit

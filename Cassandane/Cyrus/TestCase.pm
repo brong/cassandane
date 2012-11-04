@@ -241,7 +241,9 @@ magic(JMAP => sub {
     $self->config_set(httpallowcompress => 'no');
 });
 
-
+magic(VirtualDomains => sub {
+    shift->config_set(virtdomains => 'userid');
+});
 
 # Run any magic handlers indicated by the test name or attributes
 sub _run_magic
