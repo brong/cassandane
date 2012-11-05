@@ -217,25 +217,28 @@ sub sphinx_socket_path
 
 sub sphinx_dump
 {
-    my ($instance, $mb) = @_;
+    my ($instance, $mbin) = @_;
 
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
     my $sock = sphinx_socket_path($instance);
 
     return {} if ( ! -e $sock );
 
+    my $mb = $mbin;
+    $mb ||= Cassandane::Mboxname->new(
+		config => $instance->{config},
+		username => 'cassandane');
     $mb = Cassandane::Mboxname->new(
 		config => $instance->{config},
 		external => $mb)
 		unless ref $mb eq 'Cassandane::Mboxname';
-    $mb->{userid} ||= 'cassandane';
 
     my $indexname = $mb->to_username();
     $indexname =~ s/Z/Z5A/g;
     $indexname =~ s/@/Z40/g;
     $indexname =~ s/\./Z2E/g;
     $indexname =~ s/^/X/;
-    xlog "sphinx_dump: mbox \"$mb\" is indexname \"$indexname\"";
+    xlog "sphinx_dump: indexname \"$indexname\"";
 
     # First check that the table exists
     $instance->run_command(
@@ -279,7 +282,7 @@ sub sphinx_dump
 	my $uid = 0 + pop(@a);
 	my $uidvalidity = 0 + pop(@a);
 	my $mboxname = join('.', @a);
-	next if (defined $mb && $mboxname ne "$mb");
+	next if (defined $mbin && $mboxname ne "$mbin");
 	$res->{$mboxname} ||= {};
 	$res->{$mboxname}->{$uidvalidity} ||= {};
 	$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
