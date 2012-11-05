@@ -409,22 +409,31 @@ sub xconvmultisort
     {
 	xconvmulti => sub
 	{
-	    # expecting: * XCONVMULTI (folder0 folder1) ((0 1) (0 2) (1 1))
+	    # expecting: * XCONVMULTI ((folder0 uidvalidity) (folder1 uidvalidity)) ((cid (0 1) (0 2) (1 1)))
 	    my ($response, $rr) = @_;
 	    #xlog "XXX XCONVMULTI response=$response rr=" .  Data::Dumper::Dumper($rr);
 	    my $folders = $rr->[0];
-	    my $tuples = $rr->[1];
+	    my $conversations = $rr->[1];
 	    $results->{xconvmulti} = [];
-	    foreach my $tuple (@$tuples)
+	    foreach my $conv (@$conversations)
 	    {
-		push(@{$results->{xconvmulti}}, [
-		    $folders->[$tuple->[0]]->[0],
-		    0 + $tuple->[1]
-		]);
+		my $cid = shift(@$conv);
+		foreach my $tuple (@$conv)
+		{
+		    my $folderidx = $tuple->[0];
+		    my $uid = 0 + $tuple->[1];
+		    push(@{$results->{xconvmulti}}, [
+			$folders->[$folderidx]->[0],
+			$uid
+		    ]);
+		}
+		# Yes we're throwing away the CID information.  Dammit!
 	    }
 	    foreach my $folder (@$folders) {
+		my $mboxname = $folder->[0];
+		my $uidvalidity = $folder->[1];
 		$results->{uidvalidity} ||= {};
-		$results->{uidvalidity}->{$folder->[0]} = $folder->[1];
+		$results->{uidvalidity}->{$mboxname} = $uidvalidity;
 	    }
 	},
 	total => sub
