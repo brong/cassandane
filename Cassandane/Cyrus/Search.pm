@@ -55,6 +55,7 @@ use base qw(Cassandane::Cyrus::TestCase);
 use Cassandane::Util::Log;
 
 Cassandane::Cyrus::TestCase::magic(sphinx => sub { shift->want(search => 'sphinx'); });
+Cassandane::Cyrus::TestCase::magic(xapian => sub { shift->want(search => 'xapian'); });
 Cassandane::Cyrus::TestCase::magic(squat => sub { shift->want(search => 'squat'); });
 Cassandane::Cyrus::TestCase::magic(xconvmultisort => sub {
     shift->config_set(
@@ -291,6 +292,50 @@ sub sphinx_dump
     return $res;
 }
 
+sub xapian_dump
+{
+    my ($instance, $mbin) = @_;
+
+    my $filename = $instance->{basedir} . "/xapian_dump.out";
+
+    my $mb = $mbin;
+    $mb ||= Cassandane::Mboxname->new(
+		config => $instance->{config},
+		username => 'cassandane');
+    $mb = Cassandane::Mboxname->new(
+		config => $instance->{config},
+		external => $mb)
+		unless ref $mb eq 'Cassandane::Mboxname';
+
+    my $xapiandir = $instance->{basedir} . "/sphinx/" .  $mb->hashed_path() . "/xapian";
+    return {} if ( ! -d $xapiandir );
+
+    $instance->run_command(
+	    { redirects => { stdout => $filename } },
+	    'delve', '-V0', '-1', $xapiandir);
+
+    my $res = {};
+    open RESULTS, '<', $filename
+	or die "Cannot open $filename for reading: $!";
+    while ($_ = readline(RESULTS))
+    {
+	chomp;
+	next if m/^Value 0/;
+	s/^\d+://;
+	my @a = split(/\./);
+	next if scalar(@a) < 3;
+	my $uid = 0 + pop(@a);
+	my $uidvalidity = 0 + pop(@a);
+	my $mboxname = join('.', @a);
+	next if (defined $mbin && $mboxname ne "$mbin");
+	$res->{$mboxname} ||= {};
+	$res->{$mboxname}->{$uidvalidity} ||= {};
+	$res->{$mboxname}->{$uidvalidity}->{$uid} = 1;
+    }
+    close RESULTS;
+    return $res;
+}
+
 sub test_squatter_sphinx
     :SmallBatchsize
 {
@@ -298,6 +343,15 @@ sub test_squatter_sphinx
 
     xlog "test squatter with Sphinx";
     $self->squatter_test_common(\&sphinx_dump);
+}
+
+sub test_squatter_xapian
+    :SmallBatchsize
+{
+    my ($self) = @_;
+
+    xlog "test squatter with Xapian";
+    $self->squatter_test_common(\&xapian_dump);
 }
 
 sub squatter_test_common
@@ -376,6 +430,14 @@ sub test_prefilter_sphinx
     my ($self) = @_;
 
     xlog "test squatter with Sphinx";
+    $self->prefilter_test_common();
+}
+
+sub test_prefilter_xapian
+{
+    my ($self) = @_;
+
+    xlog "test squatter with Xapian";
     $self->prefilter_test_common();
 }
 
@@ -875,6 +937,15 @@ sub test_rolling_sphinx
     $self->rolling_test_common(\&sphinx_dump, 0);
 }
 
+sub test_rolling_xapian
+    :RollingSquatter
+{
+    my ($self) = @_;
+
+    xlog "test squatter rolling mode with Xapian";
+    $self->rolling_test_common(\&xapian_dump, 0);
+}
+
 sub test_rolling_sphinx_locked
     :RollingSquatter
 {
@@ -884,7 +955,6 @@ sub test_rolling_sphinx_locked
     xlog "the mboxname lock in shared mode";
     $self->rolling_test_common(\&sphinx_dump, 1);
 }
-
 
 sub test_rolling_many_sphinx
     :RollingSquatter

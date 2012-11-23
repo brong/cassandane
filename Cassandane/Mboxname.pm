@@ -285,4 +285,30 @@ sub make_parent
     return $child;
 }
 
+# TODO: does not support 'full' hashing
+sub _dir_hash
+{
+    my ($self, $dir) = @_;
+    return substr($dir, 0, 1);
+}
+
+sub hashed_path
+{
+    my ($self) = @_;
+
+    my @comps;
+    if ($self->{domain})
+    {
+	push(@comps,
+		'domain',
+		$self->_dir_hash($self->{domain}),
+		$self->{domain});
+    }
+    push(@comps,
+	    $self->_dir_hash($self->{userid}),
+	    'user',
+	    $self->{userid});
+    return join('/', @comps);
+}
+
 1;
