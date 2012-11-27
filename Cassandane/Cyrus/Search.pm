@@ -336,13 +336,25 @@ sub xapian_dump
     return $res;
 }
 
+my %dumpers = (
+    squat => \&squat_dump,
+    sphinx => \&sphinx_dump,
+    xapian => \&xapian_dump
+);
+
+sub index_dump
+{
+    my ($instance, $mbin) = @_;
+    return $dumpers{$instance->{config}->get('search_engine')}->($instance, $mbin);
+}
+
 sub test_squatter_sphinx
     :SmallBatchsize
 {
     my ($self) = @_;
 
     xlog "test squatter with Sphinx";
-    $self->squatter_test_common(\&sphinx_dump);
+    $self->squatter_test_common();
 }
 
 sub test_squatter_xapian
@@ -351,12 +363,12 @@ sub test_squatter_xapian
     my ($self) = @_;
 
     xlog "test squatter with Xapian";
-    $self->squatter_test_common(\&xapian_dump);
+    $self->squatter_test_common();
 }
 
 sub squatter_test_common
 {
-    my ($self, $dumper) = @_;
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -375,14 +387,14 @@ sub squatter_test_common
     $self->check_messages(\%exp);
 
     xlog "Before first index, there is nothing to dump";
-    $res = $dumper->($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({}, $res);
 
     xlog "First index run";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the first index run";
-    $res = $dumper->($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
@@ -395,7 +407,7 @@ sub squatter_test_common
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "The second run should have no further effect";
-    my $res2 = $dumper->($self->{instance}, $mboxname);
+    my $res2 = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals($res, $res2);
 
     xlog "Add another message";
@@ -406,7 +418,7 @@ sub squatter_test_common
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "The third run should have indexed the new message";
-    $res = $dumper->($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
@@ -441,7 +453,7 @@ sub test_prefilter_xapian
     $self->prefilter_test_common();
 }
 
-sub index_dump
+sub run_squatter
 {
     my ($instance, @args) = @_;
 
@@ -816,7 +828,7 @@ sub filter_test_to_imap_search
 
 sub prefilter_test_common
 {
-    my ($self, $dumper) = @_;
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -842,7 +854,7 @@ sub prefilter_test_common
     foreach my $t (@filter_tests)
     {
 	xlog "Testing query \"$t->{query}\"";
-	$res = index_dump($self->{instance}, '-vv', '-e', $t->{query}, $mboxname);
+	$res = run_squatter($self->{instance}, '-vv', '-e', $t->{query}, $mboxname);
 	$self->assert_deep_equals({
 	    $mboxname => {
 		map { $_ => 1 } @{$t->{expected}}
@@ -853,7 +865,7 @@ sub prefilter_test_common
 
 sub rolling_test_common
 {
-    my ($self, $dumper, $keep) = @_;
+    my ($self, $keep) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -878,7 +890,7 @@ sub rolling_test_common
     $self->replication_wait('squatter', $keep);
 
     xlog "Indexer should have indexed the message";
-    $res = $dumper->($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
@@ -898,7 +910,7 @@ sub rolling_test_common
     sleep(8);
 
     xlog "Indexer should have indexed the new messages";
-    $res = $dumper->($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
@@ -925,7 +937,7 @@ sub test_rolling_squat
     my ($self) = @_;
 
     xlog "test squatter rolling mode with Squat";
-    $self->rolling_test_common(\&squat_dump, 0);
+    $self->rolling_test_common(0);
 }
 
 sub test_rolling_sphinx
@@ -934,7 +946,7 @@ sub test_rolling_sphinx
     my ($self) = @_;
 
     xlog "test squatter rolling mode with Sphinx";
-    $self->rolling_test_common(\&sphinx_dump, 0);
+    $self->rolling_test_common(0);
 }
 
 sub test_rolling_xapian
@@ -943,7 +955,7 @@ sub test_rolling_xapian
     my ($self) = @_;
 
     xlog "test squatter rolling mode with Xapian";
-    $self->rolling_test_common(\&xapian_dump, 0);
+    $self->rolling_test_common(0);
 }
 
 sub test_rolling_sphinx_locked
@@ -953,13 +965,26 @@ sub test_rolling_sphinx_locked
 
     xlog "Test squatter rolling mode with Sphinx and an imapd holding";
     xlog "the mboxname lock in shared mode";
-    $self->rolling_test_common(\&sphinx_dump, 1);
+    $self->rolling_test_common(1);
 }
 
 sub test_rolling_many_sphinx
     :RollingSquatter
 {
-    my ($self, $dumper) = @_;
+    my ($self) = @_;
+    $self->rolling_many_test_common();
+}
+
+sub test_rolling_many_xapian
+    :RollingSquatter
+{
+    my ($self) = @_;
+    $self->rolling_many_test_common();
+}
+
+sub rolling_many_test_common
+{
+    my ($self) = @_;
 
     xlog "test squatter rolling mode with Sphinx and many users";
 
@@ -1014,12 +1039,12 @@ sub test_rolling_many_sphinx
     $self->replication_wait('squatter');
 
     xlog "Indexer should have indexed the messages";
-    # Note that we have to call sphinx_dump once for each user
+    # Note that we have to call index_dump once for each user
     foreach my $user (@users)
     {
 	my $folder = "user.$user";
 	xlog "folder $folder";
-	my $res = sphinx_dump($self->{instance}, $folder);
+	my $res = index_dump($self->{instance}, $folder);
 	$self->assert_deep_equals({
 		$folder => { $uidv{$folder} => { map { $_ => 1 } (1..3) } }
 	}, $res);
@@ -1053,11 +1078,11 @@ sub test_8bit_sphinx
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check that the terms got indexed";
-    $res = index_dump($self->{instance}, '-vv', '-e', 'body:hello', $mboxname);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'body:hello', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
-    $res = index_dump($self->{instance}, '-vv', '-e', 'body:world', $mboxname);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'body:world', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
-    $res = index_dump($self->{instance}, '-vv', '-e', 'body:quinoa', $mboxname);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'body:quinoa', $mboxname);
     $self->assert_deep_equals({ $mboxname => { } }, $res);
 }
 
@@ -1145,8 +1170,20 @@ sub encode_number
 sub test_sphinx_large_query
 {
     my ($self) = @_;
+    xlog "test truncation of large messages with Sphinx";
+    $self->large_query_test_common();
+}
 
-    xlog "test truncation of large messages";
+sub test_xapian_large_query
+{
+    my ($self) = @_;
+    xlog "test truncation of large messages with Xapian";
+    $self->large_query_test_common();
+}
+
+sub large_query_test_common
+{
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -1182,7 +1219,7 @@ sub test_sphinx_large_query
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check that both messages were indexed";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
@@ -1193,7 +1230,7 @@ sub test_sphinx_large_query
 	}, $res);
 
     xlog "Check that the untruncated text is found for both messages";
-    $res = index_dump($self->{instance}, '-vv', '-e',
+    $res = run_squatter($self->{instance}, '-vv', '-e',
 		      'body:' .  encode_number($untruncated_n), $mboxname);
     $self->assert_deep_equals({
 	$mboxname => {
@@ -1203,7 +1240,7 @@ sub test_sphinx_large_query
     }, $res);
 
     xlog "Check that the truncated text is not found";
-    $res = index_dump($self->{instance}, '-vv', '-e',
+    $res = run_squatter($self->{instance}, '-vv', '-e',
 		      'body:' .  encode_number($truncated_n), $mboxname);
     $self->assert_deep_equals({ $mboxname => { } }, $res);
 }
@@ -1265,7 +1302,7 @@ sub test_sphinx_prefilter_multi
     foreach my $t (@filter_tests)
     {
 	xlog "Testing query \"$t->{query}\"";
-	$res = index_dump($self->{instance}, '-vvm', '-e', $t->{query}, $mboxname);
+	$res = run_squatter($self->{instance}, '-vvm', '-e', $t->{query}, $mboxname);
 
 	my $exp = {};
 	foreach my $i (@{$t->{expected}})
@@ -1633,7 +1670,7 @@ sub test_sphinx_iris1936
     }
     $folder = $folders[20];
     $iexp->{$folder} = { $lastuidv => { map { $_ => 1 } (1..6) } };
-    $self->assert_deep_equals($iexp, sphinx_dump($self->{instance}));
+    $self->assert_deep_equals($iexp, index_dump($self->{instance}));
 }
 
 sub test_sphinx_null_multipart
@@ -1663,7 +1700,7 @@ sub test_sphinx_null_multipart
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the index run";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 }
 
@@ -1694,13 +1731,13 @@ sub test_sphinx_trivial_multipart
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the index run";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 
-    $res = index_dump($self->{instance}, '-vv', '-e', 'dreamcatcher', $mboxname);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'dreamcatcher', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
 
-    $res = index_dump($self->{instance}, '-vv', '-e', 'brooklyn', $mboxname);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'brooklyn', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
 }
 
@@ -1739,10 +1776,10 @@ sub test_sphinx_single_multipart
     $res = sphinx_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 
-    $res = index_dump($self->{instance}, '-vv', '-e', 'quinoa', $mboxname);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'quinoa', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
 
-    $res = index_dump($self->{instance}, '-vv', '-e', 'etsy', $mboxname);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'etsy', $mboxname);
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
 }
 
@@ -1791,6 +1828,15 @@ sub test_squat_unindexed_sort_all
 
     xlog "test that SORT...ALL works in the presence of";
     xlog "unindexed messages, under SQUAT";
+    $self->unindexed_sort_all_common();
+}
+
+sub test_xapian_unindexed_sort_all
+{
+    my ($self) = @_;
+
+    xlog "test that SORT...ALL works in the presence of";
+    xlog "unindexed messages, under Xapian";
     $self->unindexed_sort_all_common();
 }
 
@@ -1852,6 +1898,15 @@ sub test_squat_unindexed_sort_subject
 
     xlog "test that SORT...SUBJECT works in the presence of";
     xlog "unindexed messages, under SQUAT";
+    $self->unindexed_sort_subject_common();
+}
+
+sub test_xapian_unindexed_sort_subject
+{
+    my ($self) = @_;
+
+    xlog "test that SORT...SUBJECT works in the presence of";
+    xlog "unindexed messages, under Xapian";
     $self->unindexed_sort_subject_common();
 }
 
@@ -1922,11 +1977,30 @@ sub unindexed_sort_subject_common
     $self->assert_deep_equals([ 4 ], $res);
 }
 
+sub test_squatter_whitespace_squat
+{
+    my ($self) = @_;
+    xlog "test squatter on a folder name with a space in it, with SQUAT";
+    $self->squatter_whitespace_test_common();
+}
+
 sub test_squatter_whitespace_sphinx
 {
     my ($self) = @_;
-
     xlog "test squatter on a folder name with a space in it, with Sphinx";
+    $self->squatter_whitespace_test_common();
+}
+
+sub test_squatter_whitespace_xapian
+{
+    my ($self) = @_;
+    xlog "test squatter on a folder name with a space in it, with Xapian";
+    $self->squatter_whitespace_test_common();
+}
+
+sub squatter_whitespace_test_common
+{
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane.Etsy Quinoa';
@@ -1947,14 +2021,14 @@ sub test_squatter_whitespace_sphinx
     $self->check_messages(\%exp);
 
     xlog "Before first index, there is nothing to dump";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({}, $res);
 
     xlog "Index run";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the index run";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
@@ -1964,12 +2038,34 @@ sub test_squatter_whitespace_sphinx
 	}, $res);
 }
 
+sub test_squatter_domain_squat
+    :VirtualDomains
+{
+    my ($self) = @_;
+    xlog "test squatter on a folder name in a domain, with SQUAT";
+    $self->squatter_domain_test_common();
+}
+
 sub test_squatter_domain_sphinx
     :VirtualDomains
 {
     my ($self) = @_;
-
     xlog "test squatter on a folder name in a domain, with Sphinx";
+    $self->squatter_domain_test_common();
+}
+
+sub test_squatter_domain_xapian
+    :VirtualDomains
+{
+    my ($self) = @_;
+    xlog "test squatter on a folder name in a domain, with Xapian";
+    $self->squatter_domain_test_common();
+}
+
+sub squatter_domain_test_common
+{
+    my ($self) = @_;
+
     my $talk = $self->{store}->get_client();
     my $admintalk = $self->{adminstore}->get_client();
     my @users = ( 'cosby@sweater.com', 'jean@shorts.org' );
@@ -2012,7 +2108,7 @@ sub test_squatter_domain_sphinx
     xlog "Before first index, there is nothing to dump";
     foreach my $mb (@mbs)
     {
-	$res = sphinx_dump($self->{instance}, $mb);
+	$res = index_dump($self->{instance}, $mb);
 	$self->assert_deep_equals({}, $res);
     }
 
@@ -2025,7 +2121,7 @@ sub test_squatter_domain_sphinx
     xlog "Check the results of the index run";
     foreach my $mb (@mbs)
     {
-	$res = sphinx_dump($self->{instance}, $mb);
+	$res = index_dump($self->{instance}, $mb);
 	$self->assert_deep_equals({
 		"$mb" => {
 		    $uidvalidity{$mb} => {
@@ -2334,13 +2430,27 @@ sub test_sphinx_xconvmultisort_metachar
     }
 }
 
+# Note, Squat does not support multiple folder searching
+
 sub test_sphinx_xconvmultisort_unindexed_flags
 {
     my ($self) = @_;
-
     xlog "test the XCONVMULTISORT command with unindexed messages";
     xlog "and searches which don't use the search engine [IRIS-2011]";
-    # Note, Squat does not support multiple folder searching
+    $self->xconvmultisort_unindexed_flags_test_common();
+}
+
+sub test_xapian_xconvmultisort_unindexed_flags
+{
+    my ($self) = @_;
+    xlog "test the XCONVMULTISORT command with unindexed messages";
+    xlog "and searches which don't use the search engine [IRIS-2011]";
+    $self->xconvmultisort_unindexed_flags_test_common();
+}
+
+sub xconvmultisort_unindexed_flags_test_common
+{
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2460,13 +2570,29 @@ sub XXXtest_sphinx_xconvmultisort_sumerian
     }, $res);
 }
 
+# Note, Squat does not support multiple folder searching
+
 sub test_sphinx_xconvmultisort_cjk
 {
     my ($self) = @_;
 
     xlog "Test the XCONVMULTISORT command with Chinese/Japanese/Korean";
     xlog "characters [IRIS-2007]";
-    # Note, Squat does not support multiple folder searching
+    $self->xconvmultisort_cjk_test_common();
+}
+
+sub test_xapian_xconvmultisort_cjk
+{
+    my ($self) = @_;
+
+    xlog "Test the XCONVMULTISORT command with Chinese/Japanese/Korean";
+    xlog "characters [IRIS-2007]";
+    $self->xconvmultisort_cjk_test_common();
+}
+
+sub xconvmultisort_cjk_test_common
+{
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2576,7 +2702,21 @@ sub test_sphinx_xconvmultisort_russian
 
     xlog "Test the XCONVMULTISORT command with Russian";
     xlog "characters [IRIS-2048]";
-    # Note, Squat does not support multiple folder searching
+    $self->xconvmultisort_russian_test_common();
+}
+
+sub test_xapian_xconvmultisort_russian
+{
+    my ($self) = @_;
+
+    xlog "Test the XCONVMULTISORT command with Russian";
+    xlog "characters [IRIS-2048]";
+    $self->xconvmultisort_russian_test_common();
+}
+
+sub xconvmultisort_russian_test_common
+{
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2698,13 +2838,29 @@ sub test_sphinx_xconvmultisort_russian
     }
 }
 
+# Note, Squat does not support XSNIPPETS
+
 sub test_sphinx_xsnippets
     :XConvMultiSort
 {
     my ($self) = @_;
 
     xlog "Test the XSNIPPETS command";
-    # Note, Squat does not support XSNIPPETS
+    $self->xsnippets_test_common();
+}
+
+sub test_xapian_xsnippets
+    :XConvMultiSort
+{
+    my ($self) = @_;
+
+    xlog "Test the XSNIPPETS command";
+    $self->xsnippets_test_common();
+}
+
+sub xsnippets_test_common
+{
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2843,13 +2999,25 @@ sub expected_dump
     return $exp;
 }
 
-sub test_squatter_synclog_mode
+sub test_squatter_synclog_mode_sphinx
     :RollingSquatter
-    :Sphinx
 {
     my ($self) = @_;
-
     xlog "test squatter synclog mode with Sphinx";
+    $self->squatter_synclog_mode_test_common();
+}
+
+sub test_squatter_synclog_mode_xapian
+    :RollingSquatter
+{
+    my ($self) = @_;
+    xlog "test squatter synclog mode with Sphinx";
+    $self->squatter_synclog_mode_test_common();
+}
+
+sub squatter_synclog_mode_test_common
+{
+    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $base_ext = 'INBOX';
@@ -2917,7 +3085,7 @@ sub test_squatter_synclog_mode
     }
 
     xlog "Check that the messages we expect were indexed";
-    my $res = sphinx_dump($self->{instance});
+    my $res = index_dump($self->{instance});
     my $expdump = expected_dump($base_int, \%uidv,
 	# no messages in $folders[0]
 	$folders[1] => 1,
@@ -2940,7 +3108,7 @@ sub test_squatter_synclog_mode
     $self->assert( -f $synclogfile );
 
     xlog "Check that no more messages were indexed";
-    $res = sphinx_dump($self->{instance});
+    $res = index_dump($self->{instance});
     $self->assert_deep_equals(expected_dump($base_int, \%uidv,
 	# no messages in $folders[0]
 	$folders[1] => 1,
@@ -2961,7 +3129,7 @@ sub test_squatter_synclog_mode
     $self->assert( -f $synclogfile );
 
     xlog "Check that $folders[5] was indexed and no others";
-    $res = sphinx_dump($self->{instance});
+    $res = index_dump($self->{instance});
     $self->assert_deep_equals(expected_dump($base_int, \%uidv,
 	# no messages in $folders[0]
 	$folders[1] => 1,
@@ -2982,7 +3150,7 @@ sub test_squatter_synclog_mode
     $self->assert( -f $synclogfile );
 
     xlog "Check that all folders were indexed";
-    $res = sphinx_dump($self->{instance});
+    $res = index_dump($self->{instance});
     $self->assert_deep_equals(expected_dump($base_int, \%uidv,
 	# no messages in $folders[0]
 	$folders[1] => 1,
