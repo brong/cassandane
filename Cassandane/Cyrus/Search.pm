@@ -2918,18 +2918,19 @@ sub xsnippets_test_common
 	    query => [ 'text', 'cred' ],
 	    expected => [
 		[ 'SUBJECT', 'synth <b>cred</b>' ],
-		[ 'HEADERS', " ... -Transfer-Encoding: 7bit " .
+		[ 'HEADERS', "Transfer-Encoding: 7bit " .
 			     "Subject: synth <b>cred</b> " .
-			     "From: Denim &lt;scenester\@banksy ... " ]
+			     "From: Denim &lt;scenester\@banksy." ]
 	    ]
 	},
 	{
 	    query => [ 'text', 'denim' ],
 	    expected => [
 		[ 'FROM', '<b>Denim</b> &lt;scenester@banksy.com&gt;' ],
-		[ 'HEADERS', " ... : 7bit " .
+		[ 'HEADERS', "7bit " .
 			     "Subject: synth cred " .
-			     "From: <b>Denim</b> &lt;scenester\@banksy.com&gt ... " ]
+			     "From: <b>Denim</b> &lt;scenester\@banksy.com&gt; " .
+			     "Message-" ]
 	    ]
 	},
 	{
