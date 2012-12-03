@@ -72,6 +72,9 @@ Cassandane::Cyrus::TestCase::magic(RollingSquatter => sub {
 Cassandane::Cyrus::TestCase::magic(SmallBatchsize => sub {
     shift->config_set(search_batchsize => '3');
 });
+Cassandane::Cyrus::TestCase::magic(NoIndexHeaders => sub {
+    shift->config_set(search_index_headers => 'no');
+});
 
 sub new
 {
@@ -3160,6 +3163,78 @@ sub squatter_synclog_mode_test_common
 	$folders[4] => 2,
 	$folders[5] => 2,
     ), $res);
+}
+
+sub test_index_headers_sphinx
+    :NoIndexHeaders
+{
+    my ($self) = @_;
+    xlog "test the search_index_headers config option with Sphinx";
+    $self->index_headers_test_common();
+}
+
+sub test_index_headers_xapian
+    :NoIndexHeaders
+{
+    my ($self) = @_;
+    xlog "test the search_index_headers config option with Xapian";
+    $self->index_headers_test_common();
+}
+
+sub index_headers_test_common
+{
+    my ($self) = @_;
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append a message";
+    my %exp;
+    my $uid = 1;
+    $exp{$uid} = $self->make_filter_message($filter_data[0], $uid);
+    $uid++;
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    my @tests = (
+	# body is indexed
+	{ query => 'body:pickled', expected => [ 1 ] },
+	{ query => 'body:sartorial', expected => [ 1 ] },
+	{ query => 'body:beer', expected => [ 1 ] },
+	# Subject header is indexed
+	{ query => 'subject:umami', expected => [ 1 ] },
+	# To header is indexed
+	{ query => 'to:viral', expected => [ 1 ] },
+	{ query => 'to:mixtape', expected => [ 1 ] },
+	# From header is indexed
+	{ query => 'from:etsy', expected => [ 1 ] },
+	# Cc header is indexed
+	{ query => 'cc:cred', expected => [ 1 ] },
+	# Bcc header is indexed
+	{ query => 'bcc:streetart', expected => [ 1 ] },
+	# other headers are *not* indexed if search_index_headers=no
+	{ query => 'header:narwhal', expected => [ ] },
+	{ query => 'header:butcher', expected => [ ] },
+    );
+    foreach my $t (@tests)
+    {
+	xlog "Testing query \"$t->{query}\"";
+	$res = run_squatter($self->{instance}, '-vv', '-e', $t->{query}, $mboxname);
+	$self->assert_deep_equals({
+	    $mboxname => {
+		map { $_ => 1 } @{$t->{expected}}
+	    }
+	}, $res);
+    }
+
 }
 
 1;
