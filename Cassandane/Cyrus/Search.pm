@@ -3237,4 +3237,346 @@ sub index_headers_test_common
 
 }
 
+sub test_xapian_squatter_contenttype
+{
+    my ($self) = @_;
+
+    xlog "Test the indexing of MIME content types";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append a message";
+    my %exp;
+    $exp{1} = $self->make_message("Message 1",
+				  mime_type => 'multipart/mixed',
+				  mime_boundary => 'COSBY-SWEATER',
+				  body =>
+"--COSBY-SWEATER\r\n" .
+"\r\n" .
+"Quinoa etsy\r\n" .
+"--COSBY-SWEATER\r\n" .
+"Content-Type: image/jpeg\r\n" .
+"\r\n" .
+"/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAA0JCgwKCA0MCwwPDg0QFCIWFBISFCkdHxgiMSszMjAr\r\n" .
+"Ly42PE1CNjlJOi4vQ1xESVBSV1dXNEFfZl5UZU1VV1P/2wBDAQ4PDxQSFCcWFidTNy83U1NTU1NT\r\n" .
+"U1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1P/wAARCABVAEcDASIA\r\n" .
+"AhEBAxEB/8QAHAAAAgIDAQEAAAAAAAAAAAAAAAQFBgIDBwEI/8QAPBAAAgEDAgMFBQUECwAAAAAA\r\n" .
+"AQIDAAQREiEFBjEHE0FRYSJxkaHBFCOBsdEVMkNyF0JTYnOCksLS4fH/xAAXAQEBAQEAAAAAAAAA\r\n" .
+"AAAAAAACAAED/8QAIBEAAgICAgMBAQAAAAAAAAAAAAECERIhAzEiQXETYf/aAAwDAQACEQMRAD8A\r\n" .
+"6dXhIoPSqLzNzU0ty9hw2UoiZ7+dOp8MKff41Gxi5OkWjivHeHcKQm7uVVx/DX2nP4D61Uz2koLl\r\n" .
+"h+zmMB/cPegMfeMY+dUy4gBQsmrvMZfX1b1FIMQBkjO/QeFJJMUoOLo6b/SBAy6hw26I/mWtMPaJ\r\n" .
+"E92Em4dJHbnqwfLD8MfWubBk1YwM9PWs9Wk4G4O21bSB/Du9jfW3ELdZ7SVZY28VPQ+RHgaZBzXH\r\n" .
+"OF3N5wmbvLacpOf4Y3XHkw8fpXSeWuYLfjtoJI8RzoMSw53U+Y9KHfQ58codk1RRRUAgec7+XhvL\r\n" .
+"dzLA2mV8RqfLJ3x+Ga5PFPptSyKDqOT7sHb55q+9p9wVsLO2BwJJS5/yjH1rmiydzMjEBlB2U7il\r\n" .
+"ViUsdofubx5EjJc5AABxuB1rSGU+3o1KpOxHX09KYW4uyVCyae8GQdIAAHlSq6hK/eliCzKxPnnr\r\n" .
+"npTSV2cpuSWLVDixAksTmEfea9t18vfnalHZVcyBQmDkADIX0z50x3DiQxZGgN+9nb/3NLSOGZY0\r\n" .
+"J0qcA4zv51tJov0k5LyvQ1ZX5jRjqBLDBJ6+/wB9N8r8Qbh/M8EinETS6GC+Ibb4bj4VHRzzs57w\r\n" .
+"LLoGkKV2NK28hUq6jDDDD08qFI65Nx2u9n0GKKW4fcre2Fvcp+7NGr/EZooBOd9qEuvilnGr7pES\r\n" .
+"QPDLf9VXODWwm4fxcyxK4itQVkPVDrXAHv3+FN9oNy8/NdxHKCBCqoiluoxnPxNMcmxpLwHmIO0m\r\n" .
+"BAuV/wBRB9+1P0VWV+UqAuhskAePT3fKs7N5CZI3YoD7TlWxg+BrQ0bW9zpeNwVxkOMb1n37GWUI\r\n" .
+"iqjODoK536eNJUc5pkkIY+67wzfeZ3i1DI2zr1dKSuXdH3y4jAIy2c5/rUyYU0HDeZ1dRjyx5UhF\r\n" .
+"Kr+1KAAIyAF2B3z0+NZFUtux8rtrxod4FbyXNzDGpJ7x8svrgn6VGL7Gz7EbEVYuz5O85otzklED\r\n" .
+"sAT/AHTiobjStFxy8Vk9oSt02x41mjU5Ps6v2f3X2nlaBf7F2j+eR8iKKieyyV24ZexsAFSUEbeY\r\n" .
+"33/AUUWRVu0W0EHMszHJ79Fkz5HGNvhW7kaRI7PjisZDi115ONIC5+e4+dTXana5SxuAOjMmfeMj\r\n" .
+"8jVHteIyWVlfQRgFbuIRsfIBgfyzW9ovhtN215xMSzsJHbxA2U0sWLXMhYEapNx4gZ6VkwWAFkOW\r\n" .
+"I2JAIoik151hGkzq1Edd6WsaQbk5Z+2OGFRLLOZPu2TCqD19PwpGy0yyKrqrDSQcj0pySDRCuGLA\r\n" .
+"47sFhg+BpSB0QyRYxnxU/rQgo+jpzynJU0Wbs+lt4uNpCyMZHLqknnsTj4D5VWuNu8nHb5pg+szv\r\n" .
+"kdMb7fKneXC9pfwXRYhYZ0yQei6hn5VnzkwPNnESABlxjHuG9JJJhUsl8Lj2UBf2bf6ST98vX+Wi\r\n" .
+"tnZYh/ZN7JjAafHwUfrRRZEpz7Zm75ZuCF1NDiRceh/TNcewMHI9k/pX0DdQJcW7xSDKOCCPQ1yH\r\n" .
+"nPlx+F8TP2K0m+w92uHUMyg75ya1MitxuXhAY7+JrO3meIMEdlJ9klTjI8RS6h1AGravdCnOehpE\r\n" .
+"NxyvGwdCFYHY56VqLAXCs2+diD41oWFAMYzXunT0GCPA1hEhY3GmaWF9IEgwuehPhSzyyzSO8hLS\r\n" .
+"D2Sx3Jxt9K0ltY3GG86n+UOXX5gmuRJMY1hAOcZJLE/oa2wpNM6B2boF5VRh1eVy3vzj6UVNcC4X\r\n" .
+"HwbhcVlE5dUydbDBJJz9aK5sRI1iN96KKiIjiHK/BuIszXFhFrPV0GhviKh5OzjgznKy3iegkB/M\r\n" .
+"UUVtka27NOEkbXV6D56l/wCNYJ2acMXZry8b8UH+2iiohy37P+AwqNcM1x/izH8hgVOcK4Lw7hCy\r\n" .
+"Lw+1SAOQW0knPxoorDCQoooqNP/Z\r\n" .
+"--COSBY-SWEATER--\r\n");
+
+    xlog "check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = index_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:text', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:plain', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:text_plain', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:image', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:jpeg', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:image_jpeg', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:image_gif', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'contenttype:application', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { } }, $res);
+}
+
+sub test_xapian_search_contenttype
+{
+    my ($self) = @_;
+
+    xlog "Test the searching of MIME content types";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append a message";
+    my %exp;
+    $exp{1} = $self->make_message("Message 1",
+				  mime_type => 'multipart/mixed',
+				  mime_boundary => 'COSBY-SWEATER',
+				  body =>
+"--COSBY-SWEATER\r\n" .
+"\r\n" .
+"Quinoa etsy\r\n" .
+"--COSBY-SWEATER\r\n" .
+"Content-Type: image/jpeg\r\n" .
+"\r\n" .
+"/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAA0JCgwKCA0MCwwPDg0QFCIWFBISFCkdHxgiMSszMjAr\r\n" .
+"Ly42PE1CNjlJOi4vQ1xESVBSV1dXNEFfZl5UZU1VV1P/2wBDAQ4PDxQSFCcWFidTNy83U1NTU1NT\r\n" .
+"U1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1P/wAARCABVAEcDASIA\r\n" .
+"AhEBAxEB/8QAHAAAAgIDAQEAAAAAAAAAAAAAAAQFBgIDBwEI/8QAPBAAAgEDAgMFBQUECwAAAAAA\r\n" .
+"AQIDAAQREiEFBjEHE0FRYSJxkaHBFCOBsdEVMkNyF0JTYnOCksLS4fH/xAAXAQEBAQEAAAAAAAAA\r\n" .
+"AAAAAAACAAED/8QAIBEAAgICAgMBAQAAAAAAAAAAAAECERIhAzEiQXETYf/aAAwDAQACEQMRAD8A\r\n" .
+"6dXhIoPSqLzNzU0ty9hw2UoiZ7+dOp8MKff41Gxi5OkWjivHeHcKQm7uVVx/DX2nP4D61Uz2koLl\r\n" .
+"h+zmMB/cPegMfeMY+dUy4gBQsmrvMZfX1b1FIMQBkjO/QeFJJMUoOLo6b/SBAy6hw26I/mWtMPaJ\r\n" .
+"E92Em4dJHbnqwfLD8MfWubBk1YwM9PWs9Wk4G4O21bSB/Du9jfW3ELdZ7SVZY28VPQ+RHgaZBzXH\r\n" .
+"OF3N5wmbvLacpOf4Y3XHkw8fpXSeWuYLfjtoJI8RzoMSw53U+Y9KHfQ58codk1RRRUAgec7+XhvL\r\n" .
+"dzLA2mV8RqfLJ3x+Ga5PFPptSyKDqOT7sHb55q+9p9wVsLO2BwJJS5/yjH1rmiydzMjEBlB2U7il\r\n" .
+"ViUsdofubx5EjJc5AABxuB1rSGU+3o1KpOxHX09KYW4uyVCyae8GQdIAAHlSq6hK/eliCzKxPnnr\r\n" .
+"npTSV2cpuSWLVDixAksTmEfea9t18vfnalHZVcyBQmDkADIX0z50x3DiQxZGgN+9nb/3NLSOGZY0\r\n" .
+"J0qcA4zv51tJov0k5LyvQ1ZX5jRjqBLDBJ6+/wB9N8r8Qbh/M8EinETS6GC+Ibb4bj4VHRzzs57w\r\n" .
+"LLoGkKV2NK28hUq6jDDDD08qFI65Nx2u9n0GKKW4fcre2Fvcp+7NGr/EZooBOd9qEuvilnGr7pES\r\n" .
+"QPDLf9VXODWwm4fxcyxK4itQVkPVDrXAHv3+FN9oNy8/NdxHKCBCqoiluoxnPxNMcmxpLwHmIO0m\r\n" .
+"BAuV/wBRB9+1P0VWV+UqAuhskAePT3fKs7N5CZI3YoD7TlWxg+BrQ0bW9zpeNwVxkOMb1n37GWUI\r\n" .
+"iqjODoK536eNJUc5pkkIY+67wzfeZ3i1DI2zr1dKSuXdH3y4jAIy2c5/rUyYU0HDeZ1dRjyx5UhF\r\n" .
+"Kr+1KAAIyAF2B3z0+NZFUtux8rtrxod4FbyXNzDGpJ7x8svrgn6VGL7Gz7EbEVYuz5O85otzklED\r\n" .
+"sAT/AHTiobjStFxy8Vk9oSt02x41mjU5Ps6v2f3X2nlaBf7F2j+eR8iKKieyyV24ZexsAFSUEbeY\r\n" .
+"33/AUUWRVu0W0EHMszHJ79Fkz5HGNvhW7kaRI7PjisZDi115ONIC5+e4+dTXana5SxuAOjMmfeMj\r\n" .
+"8jVHteIyWVlfQRgFbuIRsfIBgfyzW9ovhtN215xMSzsJHbxA2U0sWLXMhYEapNx4gZ6VkwWAFkOW\r\n" .
+"I2JAIoik151hGkzq1Edd6WsaQbk5Z+2OGFRLLOZPu2TCqD19PwpGy0yyKrqrDSQcj0pySDRCuGLA\r\n" .
+"47sFhg+BpSB0QyRYxnxU/rQgo+jpzynJU0Wbs+lt4uNpCyMZHLqknnsTj4D5VWuNu8nHb5pg+szv\r\n" .
+"kdMb7fKneXC9pfwXRYhYZ0yQei6hn5VnzkwPNnESABlxjHuG9JJJhUsl8Lj2UBf2bf6ST98vX+Wi\r\n" .
+"tnZYh/ZN7JjAafHwUfrRRZEpz7Zm75ZuCF1NDiRceh/TNcewMHI9k/pX0DdQJcW7xSDKOCCPQ1yH\r\n" .
+"nPlx+F8TP2K0m+w92uHUMyg75ya1MitxuXhAY7+JrO3meIMEdlJ9klTjI8RS6h1AGravdCnOehpE\r\n" .
+"NxyvGwdCFYHY56VqLAXCs2+diD41oWFAMYzXunT0GCPA1hEhY3GmaWF9IEgwuehPhSzyyzSO8hLS\r\n" .
+"D2Sx3Jxt9K0ltY3GG86n+UOXX5gmuRJMY1hAOcZJLE/oa2wpNM6B2boF5VRh1eVy3vzj6UVNcC4X\r\n" .
+"HwbhcVlE5dUydbDBJJz9aK5sRI1iN96KKiIjiHK/BuIszXFhFrPV0GhviKh5OzjgznKy3iegkB/M\r\n" .
+"UUVtka27NOEkbXV6D56l/wCNYJ2acMXZry8b8UH+2iiohy37P+AwqNcM1x/izH8hgVOcK4Lw7hCy\r\n" .
+"Lw+1SAOQW0knPxoorDCQoooqNP/Z\r\n" .
+"--COSBY-SWEATER--\r\n");
+
+    xlog "check the message got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = index_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
+
+    xlog "Search with an index";
+
+    $res = $talk->search('xcontenttype', { Quote => 'text' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xcontenttype', { Quote => 'plain' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xcontenttype', { Quote => 'text_plain' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xcontenttype', { Quote => 'image' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xcontenttype', { Quote => 'jpeg' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xcontenttype', { Quote => 'image_jpeg' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xcontenttype', { Quote => 'image_gif' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ ], $res);
+
+    $res = $talk->search('xcontenttype', { Quote => 'application' })
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ ], $res);
+}
+
+sub test_xapian_squatter_listid
+{
+    my ($self) = @_;
+
+    xlog "Test the indexing of List-Id and Mailing-List headers";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    $exp{1} = $self->make_message("Message 1",
+				  extra_headers => [
+					[ 'List-Id' => 'sustainable quinoa' ]
+				  ]);
+    $exp{2} = $self->make_message("Message 2",
+				  extra_headers => [
+					[ 'Mailing-List' => 'mustache dreamcatcher' ]
+				  ]);
+    $exp{3} = $self->make_message("Message 3",
+				  extra_headers => [
+					[ 'List-Id' => 'pickled cardigan' ],
+					[ 'Mailing-List' => 'narwhal chillwave' ]
+				  ]);
+    $exp{4} = $self->make_message("Message 4");
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = index_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => {
+				$uidvalidity => { map { $_ => 1 } (1..4) }
+			    } }, $res);
+
+    xlog "Check the index can be searched";
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:sustainable', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:quinoa', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:mustache', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 2 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:dreamcatcher', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 2 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:pickled', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 3 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:cardigan', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 3 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:narwhal', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 3 => 1 } }, $res);
+
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'listid:chillwave', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 3 => 1 } }, $res);
+}
+
+sub test_xapian_search_listid
+{
+    my ($self) = @_;
+
+    xlog "Test the searching of List-Id and Mailing-List headers";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    $exp{1} = $self->make_message("Message 1",
+				  extra_headers => [
+					[ 'List-Id' => 'sustainable quinoa' ]
+				  ]);
+    $exp{2} = $self->make_message("Message 2",
+				  extra_headers => [
+					[ 'Mailing-List' => 'mustache dreamcatcher' ]
+				  ]);
+    $exp{3} = $self->make_message("Message 3",
+				  extra_headers => [
+					[ 'List-Id' => 'pickled cardigan' ],
+					[ 'Mailing-List' => 'narwhal chillwave' ]
+				  ]);
+    $exp{4} = $self->make_message("Message 4");
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = index_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => {
+				$uidvalidity => { map { $_ => 1 } (1..4) }
+			    } }, $res);
+
+    xlog "Check the index can be searched";
+
+    $res = $talk->search('xlistid', 'sustainable')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xlistid', 'quinoa')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('xlistid', 'mustache')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 2 ], $res);
+
+    $res = $talk->search('xlistid', 'dreamcatcher')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 2 ], $res);
+
+    $res = $talk->search('xlistid', 'pickled')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 3 ], $res);
+
+    $res = $talk->search('xlistid', 'cardigan')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 3 ], $res);
+
+    $res = $talk->search('xlistid', 'narwhal')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 3 ], $res);
+
+    $res = $talk->search('xlistid', 'chillwave')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 3 ], $res);
+}
+
+
+
 1;
