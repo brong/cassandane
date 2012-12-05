@@ -3610,6 +3610,69 @@ sub test_xapian_search_listid
     $self->assert_deep_equals([ 3 ], $res);
 }
 
+sub test_xapian_search_headers
+    :NoIndexHeaders
+{
+    my ($self) = @_;
+
+    xlog "Test the HEADER search criterion";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    $exp{1} = $self->make_message("Message 1",
+				  extra_headers => [
+					[ 'Gastropub' => 'mumblecore selvage' ]
+				  ]);
+    $exp{2} = $self->make_message("Message 2",
+				  extra_headers => [
+					[ 'Wayfarers' => 'helvetica mustache' ]
+				  ]);
+    $exp{3} = $self->make_message("Message 3",
+				  extra_headers => [
+					[ 'Wayfarers' => 'squid mustache' ],
+				  ]);
+    $exp{4} = $self->make_message("Message 4");
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    $res = index_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({ $mboxname => {
+				$uidvalidity => { map { $_ => 1 } (1..4) }
+			    } }, $res);
+
+    xlog "Check the index can be searched";
+
+    $res = $talk->search('header', 'gastropub', 'mumblecore')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('header', 'gastropub', 'selvage')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 1 ], $res);
+
+    $res = $talk->search('header', 'wayfarers', 'helvetica')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 2 ], $res);
+
+    $res = $talk->search('header', 'wayfarers', 'mustache')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 2, 3 ], $res);
+
+    $res = $talk->search('header', 'wayfarers', 'squid')
+	or die "Cannot search: $@";
+    $self->assert_deep_equals([ 3 ], $res);
+}
 
 
 1;
