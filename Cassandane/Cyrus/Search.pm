@@ -1089,6 +1089,39 @@ sub test_8bit_sphinx
     $self->assert_deep_equals({ $mboxname => { } }, $res);
 }
 
+sub test_empty_charset_xapian
+{
+    my ($self) = @_;
+
+    xlog "test indexing a message with charset=\"\" with Xapian";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append a message";
+    my %exp;
+    $exp{A} = $self->make_message("Message A",
+				  mime_charset => '',
+				  body => "Etsy quinoa\r\n");
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Run the indexer";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check that the terms got indexed";
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'body:etsy', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'body:quinoa', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
+    $res = run_squatter($self->{instance}, '-vv', '-e', 'body:dreamcatcher', $mboxname);
+    $self->assert_deep_equals({ $mboxname => { } }, $res);
+}
+
+
 # This not really a test, it checks to see what the
 # effecive limit on message size is when indexing to
 # Sphinx.  If you're wondering, it was 8291049.

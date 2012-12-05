@@ -308,7 +308,7 @@ sub generate
     else
     {
 	$mimetype .= "; charset=\"$params->{mime_charset}\""
-	    if $params->{mime_charset} ne '';
+	    if defined $params->{mime_charset};
     }
     $msg->add_header("Content-Type", $mimetype);
     $msg->add_header("Content-Transfer-Encoding", $params->{mime_encoding});
