@@ -495,6 +495,46 @@ sub run_squatter
     return $res;
 }
 
+sub run_search_test
+{
+    my ($instance, @args) = @_;
+
+    my $filename = $instance->{basedir} . "/search_test.out";
+
+    $instance->run_command({
+	    cyrus => 1,
+	    redirects => { stdout => $filename },
+	},
+	'search_test',
+	# we get -C for free
+	@args
+    );
+
+    my $res = {};
+    my $mboxname;
+    open RESULTS, '<', $filename
+	or die "Cannot open $filename for reading: $!";
+    while ($_ = readline(RESULTS))
+    {
+	chomp;
+	my @a = split;
+	if ($a[0] eq 'mailbox')
+	{
+	    $mboxname = $a[1];
+	    $res->{$mboxname} ||= {};
+	    next;
+	}
+	elsif ($a[0] eq 'uid')
+	{
+	    $res->{$mboxname}->{$a[1]} = 1;
+	}
+    }
+    close RESULTS;
+
+    return $res;
+}
+
+
 # data thanks to hipsteripsum.me
 my @filter_data = (
     {
@@ -3673,6 +3713,219 @@ sub test_xapian_search_headers
 	or die "Cannot search: $@";
     $self->assert_deep_equals([ 3 ], $res);
 }
+
+sub test_newsearch_prefilter
+    :Xapian
+{
+    my ($self) = @_;
+
+    xlog "Running search_test to test new query code";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $uid = 1;
+    foreach my $d (@filter_data)
+    {
+	$exp{$uid} = $self->make_filter_message($d, $uid);
+	$uid++;
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    foreach my $t (@filter_tests)
+    {
+	my $search = filter_test_to_imap_search($t);
+	next if !defined $search;
+
+	xlog "Testing query \"" . join(' ', @$search) . "\"";
+
+	$res = run_search_test($self->{instance}, '-vv',
+			       '-m', $mboxname, @$search);
+	my $expected = {};
+	$expected->{$mboxname} = {
+	    map { $_ => 1 } @{$t->{expected}}
+	} if (scalar @{$t->{expected}});
+	$self->assert_deep_equals($expected, $res);
+    }
+}
+
+sub test_newsearch_multiple
+    :Xapian
+{
+    my ($self) = @_;
+
+    xlog "Testing multiple folders with the new query code";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    my @folders = ( 'kale', 'tofu', 'smallbatch' );
+
+    xlog "create folders";
+    foreach my $folder (@folders)
+    {
+	$talk->create("$mboxname.$folder")
+	    or die "Cannot create folder $mboxname.$folder: $@";
+    }
+
+    xlog "append some messages";
+    my $exp = {};
+    map { $exp->{$_} = {}; } @folders;
+    my $uid = 1;
+    my $folderidx = 0;
+    foreach my $d (@filter_data)
+    {
+	my $folder = $folders[$folderidx];
+	$self->{store}->set_folder("$mboxname.$folder");
+	$exp->{$folder}->{$uid} = $self->make_filter_message($d, $uid);
+
+	$folderidx++;
+	if ($folderidx >= scalar(@folders)) {
+	    $folderidx = 0;
+	    $uid++;
+	}
+    }
+
+    xlog "check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$mboxname.$folder");
+	$self->check_messages($exp->{$folder});
+    }
+
+    xlog "Index the messages";
+    foreach my $folder (@folders)
+    {
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname.$folder");
+    }
+
+    xlog "Check the results of the index run";
+    foreach my $t (@filter_tests)
+    {
+	my $search = filter_test_to_imap_search($t);
+	next if !defined $search;
+
+	xlog "Testing query \"" . join(' ', @$search) . "\"";
+
+	$res = run_search_test($self->{instance}, '-vv', '-M',
+			       '-m', $mboxname, @$search);
+
+	my $exp = {};
+	foreach my $i (@{$t->{expected}})
+	{
+	    my $folder = $mboxname . "." . $folders[($i-1) % scalar(@folders)];
+	    my $uid = int(($i-1) / scalar(@folders)) + 1;
+	    $exp->{$folder} ||= {};
+	    $exp->{$folder}->{$uid} = 1;
+	}
+	xlog "expecting " . Data::Dumper::Dumper($exp);
+
+	$self->assert_deep_equals($exp, $res);
+    }
+}
+
+sub test_newsearch_single
+    :Xapian
+{
+    my ($self) = @_;
+
+    xlog "Testing multiple vs single folders with the new query code, with multiple folders present";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    my @folders = ( 'kale', 'tofu', 'smallbatch' );
+    my @words = ( 'etsy', 'tumblr', 'mlkshk' );
+
+    xlog "create folders";
+    foreach my $folder (@folders)
+    {
+	$talk->create("$mboxname.$folder")
+	    or die "Cannot create folder $mboxname.$folder: $@";
+    }
+
+    xlog "append some messages";
+    my $exp = {};
+    map { $exp->{$_} = {}; } @folders;
+    my $uid;
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$mboxname.$folder");
+
+	$uid = 1;
+	$self->{gen}->set_next_uid(1);
+	foreach my $word (@words)
+	{
+	    $exp->{$folder}->{$uid} = $self->make_message("Cosby $word");
+	    $uid++;
+	}
+    }
+
+    xlog "check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$mboxname.$folder");
+	$self->check_messages($exp->{$folder});
+    }
+
+    xlog "Index the messages";
+    foreach my $folder (@folders)
+    {
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname.$folder");
+    }
+
+    xlog "Check the results of the index run";
+    $uid = 1;
+    foreach my $word (@words)
+    {
+	xlog "Testing word \"$word\"";
+
+	xlog "No messages are in the inbox itself";
+	$res = run_search_test($self->{instance}, '-vv', '-S',
+			       '-m', $mboxname, 'subject', $word);
+	$self->assert_deep_equals({}, $res);
+
+	xlog "find the message in each of the subfolders separately";
+	foreach my $folder (@folders)
+	{
+	    $res = run_search_test($self->{instance}, '-vv', '-S',
+				   '-m', "$mboxname.$folder",
+				   'subject', $word);
+	    $exp = {};
+	    $exp->{"$mboxname.$folder"} = { $uid => 1 } ;
+	    xlog "expecting " . Data::Dumper::Dumper($exp);
+	    $self->assert_deep_equals($exp, $res);
+
+	}
+
+	xlog "find the message in all of the subfolders together";
+	$res = run_search_test($self->{instance}, '-vv', '-M',
+			       '-m', $mboxname, 'subject', $word);
+	$exp = {};
+	map { $exp->{"$mboxname.$_"} = { $uid => 1 } } (@folders);
+	xlog "expecting " . Data::Dumper::Dumper($exp);
+	$self->assert_deep_equals($exp, $res);
+
+	$uid++;
+    }
+}
+
 
 
 1;
