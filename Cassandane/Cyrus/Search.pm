@@ -624,23 +624,28 @@ sub make_filter_message
 {
     my ($self, $d, $uid) = @_;
 
-    my $to = Cassandane::Address->new(
-		name => "Test User $d->{to}",
+    my %opts = %$d;
+
+    $opts{to} = Cassandane::Address->new(
+		name => "Test User $opts{to}",
 		localpart => 'test',
 		domain => 'vmtom.com'
-	    );
-    my $from = Cassandane::Generator::make_random_address(extra => " $d->{from}");
-    my $cc = Cassandane::Generator::make_random_address(extra => " $d->{cc}");
-    my $bcc = Cassandane::Generator::make_random_address(extra => " $d->{bcc}");
+	    ) if defined $opts{to};
+    $opts{from} = Cassandane::Generator::make_random_address(extra => " $opts{from}")
+	if defined $opts{from};
+    $opts{cc} = Cassandane::Generator::make_random_address(extra => " $opts{cc}")
+	if defined $opts{cc};
+    $opts{bcc} = Cassandane::Generator::make_random_address(extra => " $opts{bcc}")
+	if defined $opts{bcc};
+    $opts{body} = $opts{body} . "\r\n"
+	if defined $opts{body};
+    if (defined $opts{narwhal})
+    {
+	$opts{extra_headers} = [ [ 'Narwhal', $opts{narwhal} ] ]
+    }
+    $opts{subject} ||= 'Message';
 
-    my $msg = $self->make_message($d->{subject} . " [$uid]",
-				     body => $d->{body} . "\r\n",
-				     to => $to,
-				     from => $from,
-				     cc => $cc,
-				     bcc => $bcc,
-				     extra_headers => [ [ 'Narwhal', $d->{narwhal} ] ]
-				     );
+    my $msg = $self->make_message($opts{subject} . " [$uid]", %opts);
     $msg->set_attribute(uid => $uid);
     return $msg;
 }
