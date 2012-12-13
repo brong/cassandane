@@ -72,6 +72,8 @@ sub default
 	    defaultpartition => 'default',
             defaultdomain => 'defdomain',
 	    'partition-default' => '@basedir@/data',
+	    'sphinxpartition-default' => '@basedir@/search',
+	    'searchpartition-default' => '@basedir@/search',
 	    sasl_mech_list => 'PLAIN LOGIN DIGEST-MD5',
 	    allowplaintext => 'yes',
 	    # config options used at FastMail - may as well be testing our stuff
