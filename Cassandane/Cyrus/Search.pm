@@ -3984,6 +3984,125 @@ sub test_newsearch_single
     }
 }
 
+# Build an IMAP sequence string
+sub sequence
+{
+    my ($msgs) = @_;
+    my @ranges;
+    my $first;
+    my $last;
+
+    foreach my $msg (sort { $a <=> $b } @$msgs)
+    {
+	if (defined $last && $msg == $last+1)
+	{
+	    $last = $msg;
+	    next;
+	}
+	# end of a range
+	push(@ranges, ($first == $last ? "$first" : "$first:$last"))
+	    if (defined $first);
+	$first = $last = $msg;
+    }
+    push(@ranges, ($first == $last ? "$first" : "$first:$last"))
+	if (defined $first);
+    return join(',', @ranges);
+}
+
+sub test_search_prefilter
+    :Xapian
+{
+    my ($self) = @_;
+
+    xlog "Test the IMAP SEARCH command including RFC 4731 and RFC 6203";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $uid = 1;
+    foreach my $d (@filter_data)
+    {
+	$exp{$uid} = $self->make_filter_message($d, $uid);
+	$uid++;
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Check the results of the index run";
+    foreach my $t (@filter_tests)
+    {
+	my $search = filter_test_to_imap_search($t->{query});
+	next if !defined $search;
+
+	xlog "Testing query \"$search\"";
+
+	$res = $talk->search({ Raw => $search })
+	    or die "Cannot search: $@";
+	$self->assert_deep_equals($t->{expected}, $res);
+
+	xlog "and again with RFC 6203 fuzzy";
+
+	$res = $talk->search({ Raw => "fuzzy ($search)" })
+	    or die "Cannot search: $@";
+	$self->assert_deep_equals($t->{expected}, $res);
+
+	xlog "test RFC 4731 return options";
+
+	my %esearch;
+	my %handlers =
+	(
+	    esearch => sub
+	    {
+		my ($response, $rr) = @_;
+		my $key;
+		my $value;
+		%esearch = ();
+		while (my $item = shift @$rr)
+		{
+		    if (ref $item eq 'ARRAY')
+		    {
+			$key = $item->[0];
+			$value = $item->[1];
+		    }
+		    else
+		    {
+			$key = $item;
+			$value = shift @$rr;
+		    }
+		    $esearch{lc($key)} = $value;
+		}
+	    }
+	);
+
+	my $tag = $talk->{CmdId};
+	$res = $talk->_imap_cmd("search", 1, \%handlers,
+				'return', [ 'min', 'max', 'count', 'all', 'relevancy' ],
+				{ Raw => "fuzzy ($search)" })
+	    or die "Cannot search: $@";
+	# print STDERR "XXX: esearch=" . Data::Dumper::Dumper(\%esearch);
+	my $exp = {
+	    tag => $tag,
+	    count => scalar(@{$t->{expected}})
+	};
+	if (scalar(@{$t->{expected}})) {
+	    $exp->{min} = $t->{expected}->[0];
+	    $exp->{max} = $t->{expected}->[-1];
+	    $exp->{all} = sequence($t->{expected});
+	    $exp->{relevancy} = [ map { 100 } @{$t->{expected}} ];
+	};
+	# print STDERR "XXX: exp=" . Data::Dumper::Dumper($exp);
+	$self->assert_deep_equals($exp, \%esearch);
+    }
+}
+
 
 
 1;
