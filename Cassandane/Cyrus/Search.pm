@@ -1522,7 +1522,7 @@ sub test_sphinx_xconvmultisort
 	xlog "Testing query \"$search\"";
 
 	$res = $self->{store}->xconvmultisort(sort => [ 'uid', 'folder' ],
-					      search => $search);
+					      search => "fuzzy ($search)");
 	xlog "res = " . Dumper($res);
 
 	my $exp = {
@@ -3806,7 +3806,7 @@ sub test_newsearch_prefilter
 	xlog "Testing query \"$search\"";
 
 	$res = run_search_test($self->{instance}, '-vv',
-			       '-m', $mboxname, $search);
+			       '-m', $mboxname, "fuzzy ($search)");
 	my $expected = {};
 	$expected->{$mboxname} = {
 	    map { $_ => 1 } @{$t->{expected}}
@@ -3877,7 +3877,7 @@ sub test_newsearch_multiple
 	xlog "Testing query \"$search\"";
 
 	$res = run_search_test($self->{instance}, '-vv', '-M',
-			       '-m', $mboxname, $search);
+			       '-m', $mboxname, "fuzzy ($search)");
 
 	my $exp = {};
 	foreach my $i (@{$t->{expected}})
@@ -3954,7 +3954,8 @@ sub test_newsearch_single
 
 	xlog "No messages are in the inbox itself";
 	$res = run_search_test($self->{instance}, '-vv', '-S',
-			       '-m', $mboxname, 'subject', $word);
+			       '-m', $mboxname,
+			       "fuzzy subject \"$word\"");
 	$self->assert_deep_equals({}, $res);
 
 	xlog "find the message in each of the subfolders separately";
@@ -3962,7 +3963,7 @@ sub test_newsearch_single
 	{
 	    $res = run_search_test($self->{instance}, '-vv', '-S',
 				   '-m', "$mboxname.$folder",
-				   'subject', $word);
+				   "fuzzy subject \"$word\"");
 	    $exp = {};
 	    $exp->{"$mboxname.$folder"} = { $uid => 1 } ;
 	    xlog "expecting " . Data::Dumper::Dumper($exp);
@@ -3972,7 +3973,8 @@ sub test_newsearch_single
 
 	xlog "find the message in all of the subfolders together";
 	$res = run_search_test($self->{instance}, '-vv', '-M',
-			       '-m', $mboxname, 'subject', $word);
+			       '-m', $mboxname,
+			       "fuzzy subject \"$word\"");
 	$exp = {};
 	map { $exp->{"$mboxname.$_"} = { $uid => 1 } } (@folders);
 	xlog "expecting " . Data::Dumper::Dumper($exp);
