@@ -722,25 +722,25 @@ my @filter_tests = (
     # Test a term which appears in no messages
     { query => 'cosby', expected => [ ] },
     # Test AND of two terms
-    { query => '__begin:and pickled authentic __end:and', expected => [ ] },
-    { query => '__begin:and twee irony __end:and', expected => [ ] },
-    { query => '__begin:and twee mustache __end:and', expected => [ 5 ] },
-    { query => '__begin:and quinoa beer __end:and', expected => [ 10 ] },
-    { query => '__begin:and twee beer __end:and', expected => [ 2, 4, 5, 8 ] },
+    { query => [ qw(and pickled authentic) ], expected => [ ] },
+    { query => [ qw(and twee irony) ], expected => [ ] },
+    { query => [ qw(and twee mustache) ], expected => [ 5 ] },
+    { query => [ qw(and quinoa beer) ], expected => [ 10 ] },
+    { query => [ qw(and twee beer) ], expected => [ 2, 4, 5, 8 ] },
     # Test AND of three terms
-    { query => '__begin:and pickled tattooed williamsburg __end:and', expected => [ ] },
-    { query => '__begin:and quinoa organic beer __end:and', expected => [ ] },
-    { query => '__begin:and quinoa irony beer __end:and', expected => [ 10 ] },
+    { query => [ qw(and pickled tattooed williamsburg) ], expected => [ ] },
+    { query => [ qw(and quinoa organic beer) ], expected => [ ] },
+    { query => [ qw(and quinoa irony beer) ], expected => [ 10 ] },
     # Test OR of two terms
-    { query => '__begin:or pickled authentic __end:or', expected => [ 1, 2 ] },
-    { query => '__begin:or twee irony __end:or', expected => [ 2, 3, 4, 5, 6, 8, 10 ] },
-    { query => '__begin:or twee mustache __end:or', expected => [ 2, 4, 5, 8 ] },
-    { query => '__begin:or quinoa beer __end:or', expected => [ 1..10 ] },
-    { query => '__begin:or twee beer __end:or', expected => [ 1..10 ] },
+    { query => [ qw(or pickled authentic) ], expected => [ 1, 2 ] },
+    { query => [ qw(or twee irony) ], expected => [ 2, 3, 4, 5, 6, 8, 10 ] },
+    { query => [ qw(or twee mustache) ], expected => [ 2, 4, 5, 8 ] },
+    { query => [ qw(or quinoa beer) ], expected => [ 1..10 ] },
+    { query => [ qw(or twee beer) ], expected => [ 1..10 ] },
     # Test OR of three terms
-    { query => '__begin:or pickled tattooed williamsburg __end:or', expected => [ 1, 4, 6 ] },
-    { query => '__begin:or quinoa organic beer __end:or', expected => [ 1..10 ] },
-    { query => '__begin:or quinoa irony beer __end:or', expected => [ 1..10 ] },
+    { query => [ qw(or pickled tattooed williamsburg) ], expected => [ 1, 4, 6 ] },
+    { query => [ qw(or quinoa organic beer) ], expected => [ 1..10 ] },
+    { query => [ qw(or quinoa irony beer) ], expected => [ 1..10 ] },
     # Test each term that appears in the Subject: of just one message
     { query => 'subject:umami', expected => [ 1 ] },
     { query => 'subject:lomo', expected => [ 2 ] },
@@ -834,44 +834,92 @@ my @filter_tests = (
     { query => 'mixtape', expected => [ 1..7 ] },
 );
 
+# Given the 'query' field from one of the filter_test array,
+# return a string suitable to feeding to squatter's -e option
+sub filter_test_to_squatter_search
+{
+    my ($t) = @_;
+
+    if (ref $t eq 'ARRAY')
+    {
+	my $c = shift(@$t);
+	if ($c eq 'and')
+	{
+	    return join(' ',
+			'__begin:and',
+			map { filter_test_to_squatter_search($_) } @$t,
+			' __end:and');
+	}
+	elsif ($c eq 'or')
+	{
+	    return join(' ',
+			'__begin:or',
+			map { filter_test_to_squatter_search($_) } @$t,
+			' __end:or');
+	}
+	else {
+	    return filter_test_to_squatter_search($c);
+	}
+    }
+    else
+    {
+	return $t;
+    }
+}
+
+# Given the 'query' field from one of the filter_test array,
+# return a string in IMAP search syntax
+sub filter_test_to_imap_search2
+{
+    my ($t) = @_;
+
+    if (ref $t eq 'ARRAY')
+    {
+	my $c = shift(@$t);
+	if ($c eq 'and')
+	{
+	    return '(' . join(' ', map { filter_test_to_imap_search2($_) } @$t) . ')';
+	}
+	elsif ($c eq 'or')
+	{
+	    die "Need exactly 2 OR children" if (scalar @$t != 2);
+	    return join(' ', 'or',
+			map { filter_test_to_imap_search2($_) } @$t);
+	}
+	else {
+	    return filter_test_to_imap_search2($c);
+	}
+    }
+    else
+    {
+	if ($t =~ m/^header:/)
+	{
+	    die "no direct equivalent to \"header:\"";
+	}
+	elsif ($t =~ m/:/)
+	{
+	    # transform 'from:foo' into 'from foo'
+	    my ($key, $val) = ($t =~ m/^([^:]+):(.*)/);
+	    return "$key \"$val\"";
+	}
+	else
+	{
+	    return "text $t";
+	}
+	return $t;
+    }
+}
+
 sub filter_test_to_imap_search
 {
     my ($t) = @_;
 
-    my @search;
-    if ($t->{query} =~ m/header:/)
+    eval
     {
-	# no direct equivalent
-	return undef;
-    }
-    elsif ($t->{query} =~ m/^__begin:and/)
-    {
-	@search = split(/\s+/, $t->{query});
-	shift(@search);
-	pop(@search);
-	@search = map { ('text', $_) } @search;
-    }
-    elsif ($t->{query} =~ m/^__begin:or/)
-    {
-	my @s = split(/\s+/, $t->{query});
-	shift(@s);
-	pop(@s);
-	@search = ( 'text', shift(@s) );
-	foreach my $t (@s)
-	{
-	    @search = ('or', 'text', $t, @search);
-	}
-    }
-    elsif ($t->{query} =~ m/:/)
-    {
-	# transform 'from:foo' into 'from' 'foo'
-	@search = split(/:/, $t->{query});
-    }
-    else
-    {
-	@search = ( 'text', $t->{query} );
-    }
-    return \@search;
+	$t = filter_test_to_imap_search2($t);
+    };
+    return undef if $@;
+    return $t;
 }
 
 sub prefilter_test_common
@@ -901,8 +949,10 @@ sub prefilter_test_common
     xlog "Check the results of the index run";
     foreach my $t (@filter_tests)
     {
-	xlog "Testing query \"$t->{query}\"";
-	$res = run_squatter($self->{instance}, '-vv', '-e', $t->{query}, $mboxname);
+	my $q = filter_test_to_squatter_search($t->{query});
+	xlog "Testing query \"$q\"";
+
+	$res = run_squatter($self->{instance}, '-vv', '-e', $q, $mboxname);
 	$self->assert_deep_equals({
 	    $mboxname => {
 		map { $_ => 1 } @{$t->{expected}}
@@ -1382,8 +1432,9 @@ sub test_sphinx_prefilter_multi
     xlog "Check the results of the index run";
     foreach my $t (@filter_tests)
     {
-	xlog "Testing query \"$t->{query}\"";
-	$res = run_squatter($self->{instance}, '-vvm', '-e', $t->{query}, $mboxname);
+	my $q = filter_test_to_squatter_search($t->{query});
+	xlog "Testing query \"$q\"";
+	$res = run_squatter($self->{instance}, '-vvm', '-e', $q, $mboxname);
 
 	my $exp = {};
 	foreach my $i (@{$t->{expected}})
@@ -1465,13 +1516,13 @@ sub test_sphinx_xconvmultisort
     xlog "Check the results of the index run";
     foreach my $t (@filter_tests)
     {
-	xlog "Testing query \"$t->{query}\"";
-
-	my $search = filter_test_to_imap_search($t);
+	my $search = filter_test_to_imap_search($t->{query});
 	next if !defined $search;
 
+	xlog "Testing query \"$search\"";
+
 	$res = $self->{store}->xconvmultisort(sort => [ 'uid', 'folder' ],
-					      search => [ @$search ]);
+					      search => $search);
 	xlog "res = " . Dumper($res);
 
 	my $exp = {
@@ -3749,13 +3800,13 @@ sub test_newsearch_prefilter
     xlog "Check the results of the index run";
     foreach my $t (@filter_tests)
     {
-	my $search = filter_test_to_imap_search($t);
+	my $search = filter_test_to_imap_search($t->{query});
 	next if !defined $search;
 
-	xlog "Testing query \"" . join(' ', @$search) . "\"";
+	xlog "Testing query \"$search\"";
 
 	$res = run_search_test($self->{instance}, '-vv',
-			       '-m', $mboxname, @$search);
+			       '-m', $mboxname, $search);
 	my $expected = {};
 	$expected->{$mboxname} = {
 	    map { $_ => 1 } @{$t->{expected}}
@@ -3820,13 +3871,13 @@ sub test_newsearch_multiple
     xlog "Check the results of the index run";
     foreach my $t (@filter_tests)
     {
-	my $search = filter_test_to_imap_search($t);
+	my $search = filter_test_to_imap_search($t->{query});
 	next if !defined $search;
 
-	xlog "Testing query \"" . join(' ', @$search) . "\"";
+	xlog "Testing query \"$search\"";
 
 	$res = run_search_test($self->{instance}, '-vv', '-M',
-			       '-m', $mboxname, @$search);
+			       '-m', $mboxname, $search);
 
 	my $exp = {};
 	foreach my $i (@{$t->{expected}})
