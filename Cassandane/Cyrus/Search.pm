@@ -209,7 +209,7 @@ sub test_squatter_squat
     my ($self) = @_;
 
     xlog "test squatter with SQUAT";
-    $self->squatter_test_common(\&squat_dump);
+    $self->squatter_test_common();
 }
 
 sub sphinx_socket_path
@@ -1941,7 +1941,7 @@ sub test_sphinx_null_text
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the index run";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 }
 
@@ -2296,7 +2296,7 @@ sub test_sphinx_query_limit
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Check the results of the index run";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({
 	    $mboxname => {
 		$uidvalidity => {
