@@ -813,19 +813,20 @@ sub filter_test_to_squatter_search
 
     if (ref $t eq 'ARRAY')
     {
-	my $c = shift(@$t);
+	my @tt = ( @$t );
+	my $c = shift(@tt);
 	if ($c eq 'and')
 	{
 	    return join(' ',
 			'__begin:and',
-			map { filter_test_to_squatter_search($_) } @$t,
+			map { filter_test_to_squatter_search($_) } @tt,
 			'__end:and');
 	}
 	elsif ($c eq 'or')
 	{
 	    return join(' ',
 			'__begin:or',
-			map { filter_test_to_squatter_search($_) } @$t,
+			map { filter_test_to_squatter_search($_) } @tt,
 			'__end:or');
 	}
 	else {
@@ -846,16 +847,17 @@ sub filter_test_to_imap_search2
 
     if (ref $t eq 'ARRAY')
     {
-	my $c = shift(@$t);
+	my @tt = ( @$t );
+	my $c = shift(@tt);
 	if ($c eq 'and')
 	{
-	    return '(' . join(' ', map { filter_test_to_imap_search2($_) } @$t) . ')';
+	    return '(' . join(' ', map { filter_test_to_imap_search2($_) } @tt) . ')';
 	}
 	elsif ($c eq 'or')
 	{
-	    die "Need exactly 2 OR children" if (scalar @$t != 2);
+	    die "Need exactly 2 OR children" if (scalar @tt != 2);
 	    return join(' ', 'or',
-			map { filter_test_to_imap_search2($_) } @$t);
+			map { filter_test_to_imap_search2($_) } @tt);
 	}
 	else {
 	    return filter_test_to_imap_search2($c);
