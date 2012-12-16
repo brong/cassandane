@@ -57,6 +57,14 @@ use Cassandane::Util::Log;
 Cassandane::Cyrus::TestCase::magic(sphinx => sub { shift->want(search => 'sphinx'); });
 Cassandane::Cyrus::TestCase::magic(xapian => sub { shift->want(search => 'xapian'); });
 Cassandane::Cyrus::TestCase::magic(squat => sub { shift->want(search => 'squat'); });
+
+my $search_engine;
+Cassandane::Unit::TestCase::parameter(\$search_engine,
+# 				      'sphinx',
+				      'xapian',
+# 				      'squat'
+				      );
+
 Cassandane::Cyrus::TestCase::magic(xconvmultisort => sub {
     shift->config_set(
 	conversations => 'on',
@@ -85,6 +93,10 @@ sub new
 sub set_up
 {
     my ($self) = @_;
+
+    xlog "Search engine is $search_engine";
+    $self->want(search => $search_engine);
+
     $self->SUPER::set_up();
 }
 
@@ -108,7 +120,7 @@ sub _fgrep_msgs
     return \@res;
 }
 
-sub test_from
+sub test_imap_search_from
 {
     my ($self) = @_;
 
@@ -155,6 +167,8 @@ sub test_from
 sub squat_dump
 {
     my ($instance, $mbox) = @_;
+
+    xlog "Dumping SQUAT index";
 
     my $filename = $instance->{basedir} . "/squat_dump.out";
 
@@ -204,14 +218,6 @@ sub squat_dump
     return $res;
 }
 
-sub test_squatter_squat
-{
-    my ($self) = @_;
-
-    xlog "test squatter with SQUAT";
-    $self->squatter_test_common();
-}
-
 sub sphinx_socket_path
 {
     my ($instance) = @_;
@@ -222,6 +228,8 @@ sub sphinx_socket_path
 sub sphinx_dump
 {
     my ($instance, $mbin) = @_;
+
+    xlog "Dumping Sphinx index";
 
     my $filename = $instance->{basedir} . "/sphinx_dump.out";
     my $sock = sphinx_socket_path($instance);
@@ -299,6 +307,8 @@ sub xapian_dump
 {
     my ($instance, $mbin) = @_;
 
+    xlog "Dumping Xapian index";
+
     my $filename = $instance->{basedir} . "/xapian_dump.out";
 
     my $mb = $mbin;
@@ -310,7 +320,7 @@ sub xapian_dump
 		external => $mb)
 		unless ref $mb eq 'Cassandane::Mboxname';
 
-    my $xapiandir = $instance->{basedir} . "/sphinx/" .  $mb->hashed_path() . "/xapian";
+    my $xapiandir = $instance->{basedir} . "/search/" .  $mb->hashed_path() . "/xapian";
     return {} if ( ! -d $xapiandir );
 
     $instance->run_command(
@@ -351,27 +361,12 @@ sub index_dump
     return $dumpers{$instance->{config}->get('search_engine')}->($instance, $mbin);
 }
 
-sub test_squatter_sphinx
+sub test_indexer
     :SmallBatchsize
 {
     my ($self) = @_;
 
-    xlog "test squatter with Sphinx";
-    $self->squatter_test_common();
-}
-
-sub test_squatter_xapian
-    :SmallBatchsize
-{
-    my ($self) = @_;
-
-    xlog "test squatter with Xapian";
-    $self->squatter_test_common();
-}
-
-sub squatter_test_common
-{
-    my ($self) = @_;
+    xlog "test search engine message indexing";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -430,30 +425,6 @@ sub squatter_test_common
 	    }
 	}, $res);
 
-}
-
-sub test_prefilter_squat
-{
-    my ($self) = @_;
-
-    xlog "test squatter with Squat";
-    $self->prefilter_test_common();
-}
-
-sub test_prefilter_sphinx
-{
-    my ($self) = @_;
-
-    xlog "test squatter with Sphinx";
-    $self->prefilter_test_common();
-}
-
-sub test_prefilter_xapian
-{
-    my ($self) = @_;
-
-    xlog "test squatter with Xapian";
-    $self->prefilter_test_common();
 }
 
 sub run_squatter
@@ -922,9 +893,11 @@ sub filter_test_to_imap_search
     return $t;
 }
 
-sub prefilter_test_common
+sub test_engine_lookup
 {
     my ($self) = @_;
+
+    xlog "test search engine index lookups";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -1029,62 +1002,30 @@ sub rolling_test_common
     $self->assert( !scalar @files );
 }
 
-sub test_rolling_squat
+sub test_rolling_indexer
     :RollingSquatter
 {
     my ($self) = @_;
 
-    xlog "test squatter rolling mode with Squat";
+    xlog "Test squatter rolling mode";
     $self->rolling_test_common(0);
 }
 
-sub test_rolling_sphinx
+sub test_rolling_indexer_locked
     :RollingSquatter
 {
     my ($self) = @_;
 
-    xlog "test squatter rolling mode with Sphinx";
-    $self->rolling_test_common(0);
-}
-
-sub test_rolling_xapian
-    :RollingSquatter
-{
-    my ($self) = @_;
-
-    xlog "test squatter rolling mode with Xapian";
-    $self->rolling_test_common(0);
-}
-
-sub test_rolling_sphinx_locked
-    :RollingSquatter
-{
-    my ($self) = @_;
-
-    xlog "Test squatter rolling mode with Sphinx and an imapd holding";
+    xlog "Test squatter rolling mode with an imapd holding";
     xlog "the mboxname lock in shared mode";
     $self->rolling_test_common(1);
 }
 
-sub test_rolling_many_sphinx
-    :RollingSquatter
-{
-    my ($self) = @_;
-    $self->rolling_many_test_common();
-}
-
-sub test_rolling_many_xapian
-    :RollingSquatter
-{
-    my ($self) = @_;
-    $self->rolling_many_test_common();
-}
-
-sub rolling_many_test_common
+sub test_rolling_indexer_many
 {
     my ($self) = @_;
 
-    xlog "test squatter rolling mode with Sphinx and many users";
+    xlog "test squatter rolling mode with many users";
 
     my $admintalk = $self->{adminstore}->get_client();
     my @users = ( qw(letterpress williamsburg narwhal irony
@@ -1149,11 +1090,11 @@ sub rolling_many_test_common
     }
 }
 
-sub test_8bit_sphinx
+sub test_indexer_8bit
 {
     my ($self) = @_;
 
-    xlog "test indexing 8bit characters with Sphinx";
+    xlog "test indexing 8bit characters";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -1184,11 +1125,11 @@ sub test_8bit_sphinx
     $self->assert_deep_equals({ $mboxname => { } }, $res);
 }
 
-sub test_empty_charset_xapian
+sub test_indexer_empty_charset
 {
     my ($self) = @_;
 
-    xlog "test indexing a message with charset=\"\" with Xapian";
+    xlog "test indexing a message with charset=\"\"";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -1298,23 +1239,11 @@ sub encode_number
     return $s;
 }
 
-sub test_sphinx_large_query
+sub test_indexer_large_message
 {
     my ($self) = @_;
-    xlog "test truncation of large messages with Sphinx";
-    $self->large_query_test_common();
-}
 
-sub test_xapian_large_query
-{
-    my ($self) = @_;
-    xlog "test truncation of large messages with Xapian";
-    $self->large_query_test_common();
-}
-
-sub large_query_test_common
-{
-    my ($self) = @_;
+    xlog "Test truncation of large messages when indexing";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -1376,12 +1305,14 @@ sub large_query_test_common
     $self->assert_deep_equals({ $mboxname => { } }, $res);
 }
 
-sub test_sphinx_prefilter_multi
+sub test_engine_lookup_multi
 {
     my ($self) = @_;
 
-    xlog "test squatter with multiple folders and Sphinx";
+    xlog "Test search engine index lookup with multiple folders";
+
     # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -1450,12 +1381,14 @@ sub test_sphinx_prefilter_multi
     }
 }
 
-sub test_sphinx_xconvmultisort
+sub test_imap_xconvmultisort
 {
     my ($self) = @_;
 
     xlog "test the XCONVMULTISORT command";
+
     # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -1522,7 +1455,7 @@ sub test_sphinx_xconvmultisort
 	xlog "Testing query \"$search\"";
 
 	$res = $self->{store}->xconvmultisort(sort => [ 'uid', 'folder' ],
-					      search => "fuzzy ($search)");
+					      search => [{ Raw => "fuzzy ($search)" }]);
 	xlog "res = " . Dumper($res);
 
 	my $exp = {
@@ -1552,12 +1485,14 @@ sub test_sphinx_xconvmultisort
     }
 }
 
-sub test_sphinx_xconvmultisort_anchor
+sub test_imap_xconvmultisort_anchor
 {
     my ($self) = @_;
 
     xlog "test the XCONVMULTISORT command with an ANCHOR";
+
     # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -1639,7 +1574,7 @@ sub test_sphinx_xconvmultisort_anchor
     {
 	xlog "Testing subject \"$s\"";
 
-	$res = $self->{store}->xconvmultisort(search => [ 'subject', "\"$s\"" ]);
+	$res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', "\"$s\"" ]);
 	delete $res->{highestmodseq} if defined $res;
 	xlog "res = " . Dumper($res);
 
@@ -1695,7 +1630,7 @@ sub test_sphinx_xconvmultisort_anchor
     }
 }
 
-sub test_sphinx_iris1936
+sub test_iris1936
     :SmallBatchsize
 {
     my ($self) = @_;
@@ -1805,7 +1740,7 @@ sub test_sphinx_iris1936
     $self->assert_deep_equals($iexp, index_dump($self->{instance}));
 }
 
-sub test_sphinx_null_multipart
+sub test_indexer_null_multipart
 {
     my ($self) = @_;
 
@@ -1836,7 +1771,7 @@ sub test_sphinx_null_multipart
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 }
 
-sub test_sphinx_trivial_multipart
+sub test_indexer_trivial_multipart
 {
     my ($self) = @_;
 
@@ -1873,7 +1808,7 @@ sub test_sphinx_trivial_multipart
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
 }
 
-sub test_sphinx_single_multipart
+sub test_indexer_single_multipart
 {
     my ($self) = @_;
 
@@ -1905,7 +1840,7 @@ sub test_sphinx_single_multipart
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivvvv', $mboxname);
 
     xlog "Check the results of the index run";
-    $res = sphinx_dump($self->{instance}, $mboxname);
+    $res = index_dump($self->{instance}, $mboxname);
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 
     $res = run_squatter($self->{instance}, '-vv', '-e', 'quinoa', $mboxname);
@@ -1915,7 +1850,7 @@ sub test_sphinx_single_multipart
     $self->assert_deep_equals({ $mboxname => { 1 => 1 } }, $res);
 }
 
-sub test_sphinx_null_text
+sub test_indexer_null_text
 {
     my ($self) = @_;
 
@@ -1945,36 +1880,11 @@ sub test_sphinx_null_text
     $self->assert_deep_equals({ $mboxname => { $uidvalidity => { 1 => 1 } } }, $res);
 }
 
-sub test_sphinx_unindexed_sort_all
+sub test_imap_sort_all_unindexed
 {
     my ($self) = @_;
 
-    xlog "test that SORT...ALL works in the presence of";
-    xlog "unindexed messages, under Sphinx";
-    $self->unindexed_sort_all_common();
-}
-
-sub test_squat_unindexed_sort_all
-{
-    my ($self) = @_;
-
-    xlog "test that SORT...ALL works in the presence of";
-    xlog "unindexed messages, under SQUAT";
-    $self->unindexed_sort_all_common();
-}
-
-sub test_xapian_unindexed_sort_all
-{
-    my ($self) = @_;
-
-    xlog "test that SORT...ALL works in the presence of";
-    xlog "unindexed messages, under Xapian";
-    $self->unindexed_sort_all_common();
-}
-
-sub unindexed_sort_all_common
-{
-    my ($self) = @_;
+    xlog "Test that SORT...ALL works in the presence of unindexed messages";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -2015,36 +1925,11 @@ sub unindexed_sort_all_common
     $self->assert_deep_equals([ 1, 2, 3, 4 ], $res);
 }
 
-sub test_sphinx_unindexed_sort_subject
+sub test_imap_sort_subject_unindexed
 {
     my ($self) = @_;
 
-    xlog "test that SORT...SUBJECT works in the presence of";
-    xlog "unindexed messages, under Sphinx";
-    $self->unindexed_sort_subject_common();
-}
-
-sub test_squat_unindexed_sort_subject
-{
-    my ($self) = @_;
-
-    xlog "test that SORT...SUBJECT works in the presence of";
-    xlog "unindexed messages, under SQUAT";
-    $self->unindexed_sort_subject_common();
-}
-
-sub test_xapian_unindexed_sort_subject
-{
-    my ($self) = @_;
-
-    xlog "test that SORT...SUBJECT works in the presence of";
-    xlog "unindexed messages, under Xapian";
-    $self->unindexed_sort_subject_common();
-}
-
-sub unindexed_sort_subject_common
-{
-    my ($self) = @_;
+    xlog "Test that SORT...SUBJECT works in the presence of unindexed messages";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -2109,30 +1994,11 @@ sub unindexed_sort_subject_common
     $self->assert_deep_equals([ 4 ], $res);
 }
 
-sub test_squatter_whitespace_squat
+sub test_indexer_whitespace
 {
     my ($self) = @_;
-    xlog "test squatter on a folder name with a space in it, with SQUAT";
-    $self->squatter_whitespace_test_common();
-}
 
-sub test_squatter_whitespace_sphinx
-{
-    my ($self) = @_;
-    xlog "test squatter on a folder name with a space in it, with Sphinx";
-    $self->squatter_whitespace_test_common();
-}
-
-sub test_squatter_whitespace_xapian
-{
-    my ($self) = @_;
-    xlog "test squatter on a folder name with a space in it, with Xapian";
-    $self->squatter_whitespace_test_common();
-}
-
-sub squatter_whitespace_test_common
-{
-    my ($self) = @_;
+    xlog "Test squatter indexing a folder name with a space in it";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane.Etsy Quinoa';
@@ -2170,33 +2036,12 @@ sub squatter_whitespace_test_common
 	}, $res);
 }
 
-sub test_squatter_domain_squat
+sub test_indexer_domain
     :VirtualDomains
 {
     my ($self) = @_;
-    xlog "test squatter on a folder name in a domain, with SQUAT";
-    $self->squatter_domain_test_common();
-}
 
-sub test_squatter_domain_sphinx
-    :VirtualDomains
-{
-    my ($self) = @_;
-    xlog "test squatter on a folder name in a domain, with Sphinx";
-    $self->squatter_domain_test_common();
-}
-
-sub test_squatter_domain_xapian
-    :VirtualDomains
-{
-    my ($self) = @_;
-    xlog "test squatter on a folder name in a domain, with Xapian";
-    $self->squatter_domain_test_common();
-}
-
-sub squatter_domain_test_common
-{
-    my ($self) = @_;
+    xlog "Test squatter on a folder name in a domain";
 
     my $talk = $self->{store}->get_client();
     my $admintalk = $self->{adminstore}->get_client();
@@ -2264,12 +2109,15 @@ sub squatter_domain_test_common
     }
 }
 
-sub test_sphinx_query_limit
+sub test_30results
     :Xconvmultisort
 {
     my ($self) = @_;
 
-    xlog "test that Sphinx' default LIMIT 20 on queries is defeated";
+    xlog "Test that Sphinx' default LIMIT 20 on queries is defeated";
+
+    # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -2481,12 +2329,14 @@ sub XXXtest_sphinx_xconvmultisort_optimisation
     }
 }
 
-sub test_sphinx_xconvmultisort_metachar
+sub test_imap_xconvmultisort_metachar
 {
     my ($self) = @_;
 
-    xlog "test quoting of SphinxQL metacharacters in the XCONVMULTISORT command";
+    xlog "Test quoting of certain SphinxQL metacharacters in the XCONVMULTISORT command";
+
     # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2562,27 +2412,12 @@ sub test_sphinx_xconvmultisort_metachar
     }
 }
 
-# Note, Squat does not support multiple folder searching
-
-sub test_sphinx_xconvmultisort_unindexed_flags
+sub test_imap_xconvmultisort_unindexed_flags
 {
     my ($self) = @_;
-    xlog "test the XCONVMULTISORT command with unindexed messages";
+
+    xlog "Test the XCONVMULTISORT command with unindexed messages";
     xlog "and searches which don't use the search engine [IRIS-2011]";
-    $self->xconvmultisort_unindexed_flags_test_common();
-}
-
-sub test_xapian_xconvmultisort_unindexed_flags
-{
-    my ($self) = @_;
-    xlog "test the XCONVMULTISORT command with unindexed messages";
-    xlog "and searches which don't use the search engine [IRIS-2011]";
-    $self->xconvmultisort_unindexed_flags_test_common();
-}
-
-sub xconvmultisort_unindexed_flags_test_common
-{
-    my ($self) = @_;
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2635,14 +2470,18 @@ sub xconvmultisort_unindexed_flags_test_common
     }, $res);
 }
 
-# Sphinx is currently broken with cuneiform characters, I suspect
-# because they're off the BMP.  But nobody really cares.
-sub XXXtest_sphinx_xconvmultisort_sumerian
+sub test_imap_xconvmultisort_sumerian
 {
     my ($self) = @_;
 
     xlog "test the XCONVMULTISORT command Sumerian characters [IRIS-2007]";
+
     # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
+
+    # Sphinx is currently broken with cuneiform characters, I suspect
+    # because they're off the BMP.  But nobody really cares.
+    return if $search_engine eq 'sphinx';
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2702,29 +2541,15 @@ sub XXXtest_sphinx_xconvmultisort_sumerian
     }, $res);
 }
 
-# Note, Squat does not support multiple folder searching
-
-sub test_sphinx_xconvmultisort_cjk
+sub test_imap_xconvmultisort_cjk
 {
     my ($self) = @_;
 
     xlog "Test the XCONVMULTISORT command with Chinese/Japanese/Korean";
     xlog "characters [IRIS-2007]";
-    $self->xconvmultisort_cjk_test_common();
-}
 
-sub test_xapian_xconvmultisort_cjk
-{
-    my ($self) = @_;
-
-    xlog "Test the XCONVMULTISORT command with Chinese/Japanese/Korean";
-    xlog "characters [IRIS-2007]";
-    $self->xconvmultisort_cjk_test_common();
-}
-
-sub xconvmultisort_cjk_test_common
-{
-    my ($self) = @_;
+    # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2828,27 +2653,15 @@ sub xconvmultisort_cjk_test_common
     }, $res);
 }
 
-sub test_sphinx_xconvmultisort_russian
+sub test_imap_xconvmultisort_russian
 {
     my ($self) = @_;
 
     xlog "Test the XCONVMULTISORT command with Russian";
     xlog "characters [IRIS-2048]";
-    $self->xconvmultisort_russian_test_common();
-}
 
-sub test_xapian_xconvmultisort_russian
-{
-    my ($self) = @_;
-
-    xlog "Test the XCONVMULTISORT command with Russian";
-    xlog "characters [IRIS-2048]";
-    $self->xconvmultisort_russian_test_common();
-}
-
-sub xconvmultisort_russian_test_common
-{
-    my ($self) = @_;
+    # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -2970,29 +2783,14 @@ sub xconvmultisort_russian_test_common
     }
 }
 
-# Note, Squat does not support XSNIPPETS
-
-sub test_sphinx_xsnippets
-    :XConvMultiSort
+sub test_imap_xsnippets
 {
     my ($self) = @_;
 
     xlog "Test the XSNIPPETS command";
-    $self->xsnippets_test_common();
-}
 
-sub test_xapian_xsnippets
-    :XConvMultiSort
-{
-    my ($self) = @_;
-
-    xlog "Test the XSNIPPETS command";
-    $self->xsnippets_test_common();
-}
-
-sub xsnippets_test_common
-{
-    my ($self) = @_;
+    # Note, Squat does not support XSNIPPETS
+    return if $search_engine eq 'squat';
 
     my $talk = $self->{store}->get_client();
     my $mboxname_int = 'user.cassandane';
@@ -3132,25 +2930,12 @@ sub expected_dump
     return $exp;
 }
 
-sub test_squatter_synclog_mode_sphinx
+sub test_indexer_synclog_mode
     :RollingSquatter
 {
     my ($self) = @_;
-    xlog "test squatter synclog mode with Sphinx";
-    $self->squatter_synclog_mode_test_common();
-}
 
-sub test_squatter_synclog_mode_xapian
-    :RollingSquatter
-{
-    my ($self) = @_;
-    xlog "test squatter synclog mode with Sphinx";
-    $self->squatter_synclog_mode_test_common();
-}
-
-sub squatter_synclog_mode_test_common
-{
-    my ($self) = @_;
+    xlog "Test squatter synclog mode";
 
     my $talk = $self->{store}->get_client();
     my $base_ext = 'INBOX';
@@ -3294,25 +3079,12 @@ sub squatter_synclog_mode_test_common
     ), $res);
 }
 
-sub test_index_headers_sphinx
+sub test_indexer_index_headers
     :NoIndexHeaders
 {
     my ($self) = @_;
-    xlog "test the search_index_headers config option with Sphinx";
-    $self->index_headers_test_common();
-}
 
-sub test_index_headers_xapian
-    :NoIndexHeaders
-{
-    my ($self) = @_;
-    xlog "test the search_index_headers config option with Xapian";
-    $self->index_headers_test_common();
-}
-
-sub index_headers_test_common
-{
-    my ($self) = @_;
+    xlog "Test the search_index_headers config option";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
@@ -3366,7 +3138,7 @@ sub index_headers_test_common
 
 }
 
-sub test_xapian_squatter_contenttype
+sub test_indexer_contenttype
 {
     my ($self) = @_;
 
@@ -3459,7 +3231,7 @@ sub test_xapian_squatter_contenttype
     $self->assert_deep_equals({ $mboxname => { } }, $res);
 }
 
-sub test_xapian_search_contenttype
+sub test_imap_search_contenttype
 {
     my ($self) = @_;
 
@@ -3562,7 +3334,7 @@ sub test_xapian_search_contenttype
     $self->assert_deep_equals([ ], $res);
 }
 
-sub test_xapian_squatter_listid
+sub test_indexer_listid
 {
     my ($self) = @_;
 
@@ -3630,7 +3402,7 @@ sub test_xapian_squatter_listid
     $self->assert_deep_equals({ $mboxname => { 3 => 1 } }, $res);
 }
 
-sub test_xapian_search_listid
+sub test_imap_search_listid
 {
     my ($self) = @_;
 
@@ -3706,7 +3478,7 @@ sub test_xapian_search_listid
     $self->assert_deep_equals([ 3 ], $res);
 }
 
-sub test_xapian_search_headers
+sub test_imap_search_headers
     :NoIndexHeaders
 {
     my ($self) = @_;
@@ -3770,8 +3542,7 @@ sub test_xapian_search_headers
     $self->assert_deep_equals([ 3 ], $res);
 }
 
-sub test_newsearch_prefilter
-    :Xapian
+sub test_newquery
 {
     my ($self) = @_;
 
@@ -3815,8 +3586,7 @@ sub test_newsearch_prefilter
     }
 }
 
-sub test_newsearch_multiple
-    :Xapian
+sub test_newquery_multiple
 {
     my ($self) = @_;
 
@@ -3893,8 +3663,7 @@ sub test_newsearch_multiple
     }
 }
 
-sub test_newsearch_single
-    :Xapian
+sub test_newquery_single
 {
     my ($self) = @_;
 
@@ -4009,8 +3778,7 @@ sub sequence
     return join(',', @ranges);
 }
 
-sub test_search_prefilter
-    :Xapian
+sub test_imap_search
 {
     my ($self) = @_;
 
@@ -4102,7 +3870,6 @@ sub test_search_prefilter
 	$self->assert_deep_equals($exp, \%esearch);
     }
 }
-
 
 
 1;
