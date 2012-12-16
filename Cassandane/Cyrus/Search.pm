@@ -819,14 +819,14 @@ sub filter_test_to_squatter_search
 	    return join(' ',
 			'__begin:and',
 			map { filter_test_to_squatter_search($_) } @$t,
-			' __end:and');
+			'__end:and');
 	}
 	elsif ($c eq 'or')
 	{
 	    return join(' ',
 			'__begin:or',
 			map { filter_test_to_squatter_search($_) } @$t,
-			' __end:or');
+			'__end:or');
 	}
 	else {
 	    return filter_test_to_squatter_search($c);
