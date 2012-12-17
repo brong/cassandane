@@ -71,6 +71,12 @@ Cassandane::Cyrus::TestCase::magic(xconvmultisort => sub {
 	conversations_db => 'twoskip'
     );
 });
+Cassandane::Cyrus::TestCase::magic(conversations => sub {
+    shift->config_set(
+	conversations => 'on',
+	conversations_db => 'twoskip'
+    );
+});
 Cassandane::Cyrus::TestCase::magic(RollingSquatter => sub {
     shift->config_set(
 	sync_log => 'yes',
@@ -2113,7 +2119,7 @@ sub test_indexer_domain
 }
 
 sub test_30results
-    :Xconvmultisort
+    :Conversations
 {
     my ($self) = @_;
 
@@ -2474,6 +2480,7 @@ sub test_imap_xconvmultisort_unindexed_flags
 }
 
 sub test_imap_xconvmultisort_sumerian
+    :Conversations
 {
     my ($self) = @_;
 
@@ -2657,6 +2664,7 @@ sub test_imap_xconvmultisort_cjk
 }
 
 sub test_imap_xconvmultisort_russian
+    :Conversations
 {
     my ($self) = @_;
 
@@ -2787,6 +2795,7 @@ sub test_imap_xconvmultisort_russian
 }
 
 sub test_imap_xsnippets
+    :Conversations
 {
     my ($self) = @_;
 
