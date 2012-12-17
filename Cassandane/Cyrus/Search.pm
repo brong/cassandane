@@ -2777,7 +2777,7 @@ sub test_imap_xconvmultisort_russian
 	$res = $self->{store}->xsnippets(
 	    "(($mboxname_ext $uidvalidity (1)))",
 	    'utf-8',
-	    'subject', { Literal => $q->[0] })
+	    'fuzzy', 'subject', { Literal => $q->[0] })
 	    or die "XSNIPPETS failed: $@";
 	delete $res->{highestmodseq} if defined $res;
 	$self->assert_deep_equals({
@@ -2897,7 +2897,7 @@ sub test_imap_xsnippets
 	$res = $self->{store}->xsnippets(
 	    "(($mboxname_ext $uidvalidity (1)))",
 	    'utf-8',
-	    @{$c->{query}})
+	    'fuzzy', [@{$c->{query}}])
 	    or die "XSNIPPETS failed: $@";
 	delete $res->{highestmodseq} if defined $res;
 	$self->assert_deep_equals({
