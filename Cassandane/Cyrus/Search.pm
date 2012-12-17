@@ -1577,7 +1577,7 @@ sub test_imap_xconvmultisort_anchor
     {
 	xlog "Testing subject \"$s\"";
 
-	$res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', "\"$s\"" ]);
+	$res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', $s ]);
 	delete $res->{highestmodseq} if defined $res;
 	xlog "res = " . Dumper($res);
 
@@ -2375,7 +2375,7 @@ sub test_imap_xconvmultisort_metachar
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
 
     xlog "Search for \"narwhal\", all messages have it";
-    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Quote => 'narwhal' } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', { Quote => 'narwhal' } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     my $N = scalar(@subjects);
@@ -2387,7 +2387,7 @@ sub test_imap_xconvmultisort_metachar
     }, $res);
 
     xlog "Search for \"whatever\", all messages have it";
-    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Quote => 'whatever' } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', { Quote => 'whatever' } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
@@ -2402,7 +2402,7 @@ sub test_imap_xconvmultisort_metachar
     foreach my $s (@subjects)
     {
 	xlog "Search for subject $s";
-	$res = $self->{store}->xconvmultisort(search => [ 'subject', { Quote => $s } ])
+	$res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', { Quote => $s } ])
 	    or die "XCONVMULTISORT failed: $@";
 	delete $res->{highestmodseq} if defined $res;
 	$self->assert_deep_equals({
@@ -2533,7 +2533,7 @@ sub test_imap_xconvmultisort_sumerian
     $self->check_messages(\%exp);
 
     xlog "Search for U+12309 CUNEIFORM SIGN TUR(DUMU)";
-    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Literal => "\xf0\x92\x8c\x89" } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', { Literal => "\xf0\x92\x8c\x89" } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
@@ -2612,7 +2612,7 @@ sub test_imap_xconvmultisort_cjk
     $self->check_messages(\%exp);
 
     xlog "Search for U+7DF7 which doesn't seem to have a name";
-    $res = $self->{store}->xconvmultisort(search => [ 'body', { Literal => "\xe7\xb7\xb7" } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'body', { Literal => "\xe7\xb7\xb7" } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
@@ -2623,7 +2623,7 @@ sub test_imap_xconvmultisort_cjk
     }, $res);
 
     xlog "Search for U+5DA3 which doesn't seem to have a name";
-    $res = $self->{store}->xconvmultisort(search => [ 'body', { Literal => "\xe5\xb6\xa3" } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'body', { Literal => "\xe5\xb6\xa3" } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
@@ -2634,7 +2634,7 @@ sub test_imap_xconvmultisort_cjk
     }, $res);
 
     xlog "Search for U+C0AC HANGUL SYLLABLE SA";
-    $res = $self->{store}->xconvmultisort(search => [ 'body', { Literal => "\xec\x82\xac" } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'body', { Literal => "\xec\x82\xac" } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
@@ -2645,7 +2645,7 @@ sub test_imap_xconvmultisort_cjk
     }, $res);
 
     xlog "Search for U+8BF6 which doesn't seem to have a name";
-    $res = $self->{store}->xconvmultisort(search => [ 'subject', { Literal => "\xe8\xaf\xb6" } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', { Literal => "\xe8\xaf\xb6" } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
@@ -2752,7 +2752,7 @@ sub test_imap_xconvmultisort_russian
     foreach my $q (@queries)
     {
 	xlog "Search for word \"" . $q->[0] . "\"";
-	$res = $self->{store}->xconvmultisort(search => [ 'subject', { Literal => $q->[0] } ])
+	$res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', { Literal => $q->[0] } ])
 	    or die "XCONVMULTISORT failed: $@";
 	delete $res->{highestmodseq} if defined $res;
 	$self->assert_deep_equals({
