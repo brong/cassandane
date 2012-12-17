@@ -1024,6 +1024,7 @@ sub test_rolling_indexer_locked
 }
 
 sub test_rolling_indexer_many
+    :RollingSquatter
 {
     my ($self) = @_;
 
