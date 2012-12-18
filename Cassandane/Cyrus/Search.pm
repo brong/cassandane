@@ -1934,73 +1934,183 @@ sub test_imap_sort_all_unindexed
     $self->assert_deep_equals([ 1, 2, 3, 4 ], $res);
 }
 
-sub test_imap_sort_subject_unindexed
+sub test_imap_sort
 {
     my ($self) = @_;
 
-    xlog "Test that SORT...SUBJECT works in the presence of unindexed messages";
+    xlog "Test the IMAP SORT command";
 
     my $talk = $self->{store}->get_client();
     my $mboxname = 'user.cassandane';
 
-    xlog "append 3 messages";
+    my @data = ({
+	# UID 1
+	subject => 'beard',
+	date => '20121208T000000Z',
+	size => 759,
+    },{
+	# UID 2
+	subject => 'tumblr',
+	date => '20121202T000001Z',
+	size => 898,
+    },{
+	# UID 3
+	subject => 'quinoa',
+	date => '20121203T000000Z',
+	size => 921,
+    },{
+	# UID 4
+	subject => 'dreamcatcher',
+	date => '20121201T000000Z',
+	size => 920,
+    },{
+	# UID 5
+	subject => 'trustfund',
+	date => '20121205T000000Z',
+	size => 812,
+    },{
+	# UID 6
+	subject => 'locavore',
+	date => '20121206T000000Z',
+	size => 924,
+    },{
+	# UID 7
+	subject => 'gastropub',
+	date => '20121207T000000Z',
+	size => 768,
+    },{
+	# UID 8
+	subject => 'pitchfork',
+	date => '20121204T000000Z',
+	size => 781,
+    },{
+	# UID 9
+	subject => 'semiotics',
+	date => '20121209T000000Z',
+	size => 894,
+    },{
+	# UID 10
+	subject => 'fannypack',
+	date => '20121210T000000Z',
+	size => 790,
+    },{
+	# UID 11
+	subject => 'forage',
+	date => '20121211T000000Z',
+	size => 960,
+    },{
+	# UID 12
+	subject => 'seitan',
+	date => '20121212T000000Z',
+	size => 808,
+    },{
+	# UID 13
+	subject => 'portland',
+	date => '20121219T000000Z',
+	size => 825,
+    },{
+	# UID 14
+	subject => 'cardigan',
+	date => '20121214T000000Z',
+	size => 906,
+    },{
+	# UID 15
+	subject => 'nextlevel',
+	date => '20121215T000000Z',
+	size => 787,
+    },{
+	# UID 16
+	subject => 'viral',
+	date => '20121216T000000Z',
+	size => 820,
+    },{
+	# UID 17
+	subject => 'truffaut',
+	date => '20121217T000000Z',
+	size => 779,
+    },{
+	# UID 18
+	subject => 'porkbelly',
+	date => '20121218T000000Z',
+	size => 939,
+    },{
+	# UID 19
+	subject => 'etsy',
+	date => '20121213T000000Z',
+	size => 800,
+    },{
+	# UID 20
+	subject => 'mixtape',
+	date => '20121202T000000Z',
+	size => 822,
+    });
+    my @date_order = (
+	4, 20, 2, 3, 8,
+	5, 6, 7, 1, 9,
+	10, 11, 12, 19, 14,
+	15, 16, 17, 18, 13);
+    my @size_order = (
+	1, 7, 17, 8, 15,
+	10, 19, 12, 5, 16,
+	20, 13, 9, 2, 14,
+	4, 3, 6, 18, 11);
+    my @uid_order = ( 1..20 );
+    my @subject_order = (
+	1, 14, 4, 19, 10,
+	11, 7, 6, 20, 15,
+	8, 18, 13, 3, 12,
+	9, 17, 5, 2, 16);
+
+    xlog "append messages";
     my %exp;
-    $exp{A} = $self->make_message('Vinyl');
-    $exp{B} = $self->make_message('Tattooed');
-    $exp{C} = $self->make_message('Portland');
+    my $uid = 1;
+    foreach my $d (@data)
+    {
+	$exp{$uid} = $self->make_filter_message($d, $uid);
+	$self->assert_equals($d->{size}, $exp{$uid}->size());
+	$uid++;
+    }
 
     my $res;
+    my @ee;
     xlog "check the messages got there";
     $self->check_messages(\%exp);
 
-    xlog "SORT...SUBJECT works";
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
-    $self->assert_deep_equals([ 1 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
-    $self->assert_deep_equals([ 2 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
-    $self->assert_deep_equals([ 3 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
-    $self->assert_deep_equals([ ], $res);
+    xlog "Sort on SUBJECT";
+    $res = $talk->sort(['subject'], 'utf-8', 'all');
+    $self->assert_deep_equals(\@subject_order, $res);
 
-    xlog "Index the messages";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+    xlog "Sort on REVERSE SUBJECT";
+    $res = $talk->sort(['reverse', 'subject'], 'utf-8', 'all');
+    (@ee) = reverse(@subject_order);
+    $self->assert_deep_equals(\@ee, $res);
 
-    xlog "SORT still works";
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
-    $self->assert_deep_equals([ 1 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
-    $self->assert_deep_equals([ 2 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
-    $self->assert_deep_equals([ 3 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
-    $self->assert_deep_equals([ ], $res);
+    xlog "Sort on UID";
+    $res = $talk->sort(['uid'], 'utf-8', 'all');
+    $self->assert_deep_equals(\@uid_order, $res);
 
-    xlog "Append another message";
-    $exp{D} = $self->make_message('Brooklyn');
+    xlog "Sort on REVERSE UID";
+    $res = $talk->sort(['reverse', 'uid'], 'utf-8', 'all');
+    (@ee) = reverse(@uid_order);
+    $self->assert_deep_equals(\@ee, $res);
 
-    xlog "SORT sees the new, unindexed, message";
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
-    $self->assert_deep_equals([ 1 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
-    $self->assert_deep_equals([ 2 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
-    $self->assert_deep_equals([ 3 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
-    $self->assert_deep_equals([ 4 ], $res);
+    xlog "Sort on DATE";
+    $res = $talk->sort(['date'], 'utf-8', 'all');
+    $self->assert_deep_equals(\@date_order, $res);
 
-    xlog "Index the new message";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+    xlog "Sort on REVERSE DATE";
+    $res = $talk->sort(['reverse', 'date'], 'utf-8', 'all');
+    (@ee) = reverse(@date_order);
+    $self->assert_deep_equals(\@ee, $res);
 
-    xlog "SORT still sees the new, now indexed, message";
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'vinyl');
-    $self->assert_deep_equals([ 1 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'tattooed');
-    $self->assert_deep_equals([ 2 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'portland');
-    $self->assert_deep_equals([ 3 ], $res);
-    $res = $talk->sort(['uid'], 'utf-8', 'subject', 'brooklyn');
-    $self->assert_deep_equals([ 4 ], $res);
+    xlog "Sort on SIZE";
+    $res = $talk->sort(['size'], 'utf-8', 'all');
+    $self->assert_deep_equals(\@size_order, $res);
+
+    xlog "Sort on REVERSE SIZE";
+    $res = $talk->sort(['reverse', 'size'], 'utf-8', 'all');
+    (@ee) = reverse(@size_order);
+    $self->assert_deep_equals(\@ee, $res);
 }
 
 sub test_indexer_whitespace
