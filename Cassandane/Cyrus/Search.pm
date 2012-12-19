@@ -2115,6 +2115,84 @@ sub test_imap_sort
     $self->assert_deep_equals(\@ee, $res);
 }
 
+sub test_imap_sort_with_others
+{
+    my ($self) = @_;
+
+    xlog "Test the IMAP SORT command with other folders existing";
+    xlog "to ensure SORT only reports UIDs from the selected folder";
+
+    my $talk = $self->{store}->get_client();
+
+    my @folders = ( 'kale', 'smallbatch', 'tofu' );
+    my %offsets = (
+	"inbox.kale" => 1,
+	"inbox.smallbatch" => 5,
+	"inbox.tofu" => 13,
+    );
+
+    xlog "create folders";
+    foreach my $folder (@folders)
+    {
+	my $ff = "inbox.$folder";
+	$talk->create($ff)
+	    or die "Cannot create folder $ff: $@";
+    }
+
+    xlog "append messages";
+    my %exp;
+    foreach my $folder (@folders)
+    {
+	my $ff = "inbox.$folder";
+	my $uid = 1;
+	$self->{store}->set_folder($ff);
+	$self->{gen}->set_next_uid($uid);
+	while ($uid <= $offsets{$ff})
+	{
+	    # filler carefully designed to sort before all the test
+	    # data, and in uid order, when sorted on subject.
+	    my $msg = $self->make_message(sprintf("aaaa%05u filler", $uid));
+	    $exp{$ff}{$uid} = $msg;
+	    $uid++;
+	}
+	foreach my $d (@sort_data)
+	{
+	    my $msg = $self->make_filter_message($d, $uid);
+	    $exp{$ff}{$uid} = $msg;
+	    $uid++;
+	}
+    }
+
+    my $res;
+    my @ee;
+    xlog "check the messages got there";
+    foreach my $folder (@folders)
+    {
+	my $ff = "inbox.$folder";
+	$self->{store}->set_folder($ff);
+	$self->check_messages($exp{$ff});
+    }
+
+    foreach my $folder (@folders)
+    {
+	my $ff = "inbox.$folder";
+	$self->{store}->set_folder($ff);
+	$self->{store}->_select();
+
+	xlog "Sort on SUBJECT";
+	my $off = $offsets{$ff};
+	(@ee) = ( 1..$off, map { $_+$off } @sort_subject_order);
+	$res = $talk->sort(['subject'], 'utf-8', 'all');
+	$self->assert_deep_equals(\@ee, $res);
+
+	xlog "Sort on REVERSE SUBJECT";
+	$res = $talk->sort(['reverse', 'subject'], 'utf-8', 'all');
+	(@ee) = reverse(@ee);
+	$self->assert_deep_equals(\@ee, $res);
+    }
+}
+
+
 sub test_indexer_whitespace
 {
     my ($self) = @_;
