@@ -2707,7 +2707,7 @@ sub test_imap_xconvmultisort_sumerian
     $exp{A} = $self->make_message('Message A',
 				  mime_charset => 'utf-8',
 				  mime_encoding => 'quoted-printable',
-				  body => "=F0=92=8C=89=F0=92=8B=9B=\r\n"
+				  body => "=F0=92=8C=89 =F0=92=8B=9B\r\n"
 					  . "=F0=92=89=A1=F0=92=81=B2\r\n"
 					  . "dumu si nu-sa2\r\n");
     $exp{B} = $self->make_message('Message B',
@@ -2715,14 +2715,14 @@ sub test_imap_xconvmultisort_sumerian
 				  mime_encoding => 'quoted-printable',
 				  body =>
 					  "=F0=92=82=BC=F0=92=80=80=F0=92=89=\r\n"
-					  . "=8C=F0=92=88=BE=F0=92=80=AD=F0=92=\r\n"
+					  . "=8C =F0=92=88=BE=F0=92=80=AD=F0=92=\r\n"
 					  . "=85=86=F0=92=81=B3=F0=92=8C=85\r\n"
 					  . "ama-a-ni na-an-u3-(dib?)-tud\r\n");
     $exp{C} = $self->make_message('Message C',
 				  mime_charset => 'utf-8',
 				  mime_encoding => 'quoted-printable',
 				  body => "=F0=92=80=AD=F0=92=8A=8F=F0=92=88=\r\n"
-					  .  "=BE=F0=92=80=AD=F0=92=81=B6=F0=\r\n"
+					  .  "=BE =F0=92=80=AD=F0=92=81=B6=F0=\r\n"
 					  . "=92=81=B6=F0=92=82=8A\r\n"
 					  . "dig^ir-ra-ni na-an-dim2-dim2-e\r\n");
 
@@ -2733,13 +2733,25 @@ sub test_imap_xconvmultisort_sumerian
     $self->check_messages(\%exp);
 
     xlog "Search for U+12309 CUNEIFORM SIGN TUR(DUMU)";
-    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', { Literal => "\xf0\x92\x8c\x89" } ])
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'body', { Literal => "\xf0\x92\x8c\x89" } ])
 	or die "XCONVMULTISORT failed: $@";
     delete $res->{highestmodseq} if defined $res;
     $self->assert_deep_equals({
 	total => 1,
 	position => 1,
 	xconvmulti => [ [ $mboxname_ext, 1 ] ],
+	uidvalidity => { $mboxname_ext => $uidvalidity }
+    }, $res);
+
+    xlog "Search for dig^ir-ra-ni";
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'body',
+				{ Literal => "\xf0\x92\x80\xad\xf0\x92\x8a\x8f\xf0\x92\x88\xbe" } ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [ [ $mboxname_ext, 3 ] ],
 	uidvalidity => { $mboxname_ext => $uidvalidity }
     }, $res);
 }
