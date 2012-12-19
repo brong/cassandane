@@ -1641,6 +1641,249 @@ sub test_imap_xconvmultisort_anchor
     }
 }
 
+sub test_imap_xconvmultisort_folder
+    :Conversations
+{
+    my ($self) = @_;
+
+    xlog "test the XCONVMULTISORT command with the FOLDER";
+    xlog "search item and multiple folders".
+
+    # Note, Squat does not support multiple folder searching
+    return if $search_engine eq 'squat';
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my $res;
+    my %uidvalidity;
+    my $hms = 0;
+
+    my @folders = ( 'kale', 'smallbatch' );
+    my $f0 = "$mboxname_ext.$folders[0]";
+    my $f1 = "$mboxname_ext.$folders[1]";
+    my $empty = 'tofu';
+    my $fe = "$mboxname_ext.$empty";
+
+    xlog "create folders";
+    foreach my $folder (@folders, $empty)
+    {
+	my $ff = "$mboxname_ext.$folder";
+	$talk->create($ff)
+	    or die "Cannot create folder $ff: $@";
+	$res = $talk->status($ff, ['uidvalidity', 'highestmodseq']);
+	$uidvalidity{$ff} = $res->{uidvalidity};
+	$hms = $res->{highestmodseq} if ($hms < $res->{highestmodseq});
+    }
+
+    my @subjects = (
+	'aesthetic fannypack irony',	# f0 1
+	'artisan fannypack irony',	# f1 1
+	'artparty fannypack hoodie',	# f0 2
+	'austin fannypack hoodie',	# f1 2
+	'authentic fingerstache irony',	# f0 3
+	'banhmi fingerstache irony',	# f1 3
+	'banksy fingerstache hoodie',	# f0 4
+	'beard fingerstache hoodie',	# f1 4
+	'beer flexitarian irony',	# f0 5
+	'bespoke flexitarian hoodie',	# f1 5
+	'blog flexitarian hoodie',	# f0 6
+	'brunch flexitarian irony',	# f1 6
+	'butcher forage irony',		# f0 7
+	'cardigan forage hoodie',	# f1 7
+	'carles forage hoodie',		# f0 8
+	'chambray forage irony',	# f1 8
+	'chips freegan irony',		# f0 9
+	'cliche freegan hoodie',	# f1 9
+	'cray freegan hoodie',		# f0 10
+	'cred freegan irony',		# f1 10
+    );
+
+    my @tests = ({
+	queried => undef,
+	subject => 'aesthetic',
+	expected => [ [$f0, 1] ],
+    },{
+	queried => undef,
+	subject => 'artisan',
+	expected => [ [$f1, 1] ],
+    },{
+	queried => undef,
+	subject => 'chips',
+	expected => [ [$f0, 9] ],
+    },{
+	queried => undef,
+	subject => 'cliche',
+	expected => [ [$f1, 9] ],
+    },{
+	queried => undef,
+	subject => 'fingerstache',
+	expected => [ [$f0, 3],
+		      [$f1, 3],
+		      [$f0, 4],
+		      [$f1, 4] ],
+    },{
+	queried => undef,
+	subject => 'hoodie',
+	expected => [ [$f0, 2],
+		      [$f1, 2],
+		      [$f0, 4],
+		      [$f1, 4],
+		      [$f1, 5],
+		      [$f0, 6],
+		      [$f1, 7],
+		      [$f0, 8],
+		      [$f1, 9],
+		      [$f0, 10] ],
+    },{
+	queried => $f0,
+	subject => 'aesthetic',
+	expected => [ [$f0, 1] ],
+    },{
+	queried => $f0,
+	subject => 'artisan',
+	expected => [ ],
+    },{
+	queried => $f0,
+	subject => 'chips',
+	expected => [ [$f0, 9] ],
+    },{
+	queried => $f0,
+	subject => 'cliche',
+	expected => [ ],
+    },{
+	queried => $f0,
+	subject => 'fingerstache',
+	expected => [ [$f0, 3],
+		      [$f0, 4] ],
+    },{
+	queried => $f0,
+	subject => 'hoodie',
+	expected => [ [$f0, 2],
+		      [$f0, 4],
+		      [$f0, 6],
+		      [$f0, 8],
+		      [$f0, 10] ],
+    },{
+	queried => $f1,
+	subject => 'aesthetic',
+	expected => [ ],
+    },{
+	queried => $f1,
+	subject => 'artisan',
+	expected => [ [$f1, 1] ],
+    },{
+	queried => $f1,
+	subject => 'chips',
+	expected => [ ],
+    },{
+	queried => $f1,
+	subject => 'cliche',
+	expected => [ [$f1, 9] ],
+    },{
+	queried => $f1,
+	subject => 'fingerstache',
+	expected => [ [$f1, 3],
+		      [$f1, 4] ],
+    },{
+	queried => $f1,
+	subject => 'hoodie',
+	expected => [ [$f1, 2],
+		      [$f1, 4],
+		      [$f1, 5],
+		      [$f1, 7],
+		      [$f1, 9] ],
+    });
+
+    xlog "append some messages";
+    my $exp = {};
+    map { $exp->{$_} = {}; } @folders;
+    my $uid = 1;
+    my $folderidx = 0;
+    foreach my $subject (@subjects)
+    {
+	my $folder = $folders[$folderidx];
+	$self->{store}->set_folder("$mboxname_ext.$folder");
+	$self->{gen}->set_next_uid($uid);
+	$exp->{$folder}->{$uid} = $self->make_message($subject);
+
+	$folderidx++;
+	if ($folderidx >= scalar(@folders)) {
+	    $folderidx = 0;
+	    $uid++;
+	}
+	$hms++;
+    }
+
+    xlog "check the messages got there";
+    foreach my $folder (@folders)
+    {
+	$self->{store}->set_folder("$mboxname_ext.$folder");
+	$self->check_messages($exp->{$folder});
+    }
+
+    xlog "Index the messages";
+    foreach my $folder (@folders)
+    {
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', "$mboxname_int.$folder");
+    }
+
+    xlog "Test that XCONVMULTISORT requires a folder to be selected";
+    $talk->unselect();
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', 'cliche' ]);
+    $self->assert_null($res);
+    $self->assert_matches(qr/Please select a mailbox first/i, $talk->get_last_error());
+
+    xlog "Check the behaviour of XCONVMULTISORT";
+    foreach my $t (@tests)
+    {
+	my @query;
+	push(@query, 'folder', $t->{queried})
+	    if defined $t->{queried};
+	push(@query, 'fuzzy', 'subject', $t->{subject});
+
+	foreach my $folder ($f0, $f1, $fe)
+	{
+	    xlog "Testing query \"" . join(' ', @query) . "\" in folder $folder";
+
+	    $self->{store}->set_folder($folder);
+	    $self->{store}->_select();
+
+	    $res = $self->{store}->xconvmultisort(sort => [ 'uid', 'folder' ],
+						  search => \@query);
+	    xlog "res = " . Dumper($res);
+
+	    my $exp = {
+		highestmodseq => $hms,
+		total => scalar(@{$t->{expected}}),
+		position => 1,
+		uidvalidity => {},
+		xconvmulti => $t->{expected},
+	    };
+	    if (!scalar @{$t->{expected}})
+	    {
+		delete $exp->{position};
+		delete $exp->{xconvmulti};
+		delete $exp->{uidvalidity};
+		$exp->{total} = 0;
+	    }
+	    foreach my $e (@{$t->{expected}})
+	    {
+		my $folder = $e->[0];
+		$exp->{uidvalidity}->{$folder} = $uidvalidity{$folder};
+	    }
+	    xlog "expecting " . Data::Dumper::Dumper($exp);
+
+	    $self->assert_deep_equals($exp, $res);
+	}
+    }
+}
+
+
 sub test_iris1936
     :SmallBatchsize
 {
