@@ -2115,6 +2115,117 @@ sub test_imap_sort
     $self->assert_deep_equals(\@ee, $res);
 }
 
+# Number of padding messages to insert before each existing message.
+# Used to test non-trivial mapping between UID and MSN.
+# This is the first 100 digits of PI.
+my @paddings = (
+    3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5,
+    8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2,
+    6, 4, 3, 3, 8, 3, 2, 7, 9, 5, 0,
+    2, 8, 8, 4, 1, 9, 7, 1, 6, 9, 3,
+    9, 9, 3, 7, 5, 1, 0, 5, 8, 2, 0,
+    9, 7, 4, 9, 4, 4, 5, 9, 2, 3, 0,
+    7, 8, 1, 6, 4, 0, 6, 2, 8, 6, 2,
+    0, 8, 9, 9, 8, 6, 2, 8, 0, 3, 4,
+    8, 2, 5, 3, 4, 2, 1, 1, 7, 0, 6,
+    7, 9, 8, 2, 1, 4, 8, 0, 8, 6, 5,
+);
+
+sub msn_to_uid
+{
+    my ($msn) = @_;
+    my $uid = 0;
+    foreach my $p (@paddings)
+    {
+	$uid += $p + 1;
+	$msn--;
+	last if $msn == 0;
+    }
+    return $uid;
+}
+
+sub uid_to_msn
+{
+    my ($uid) = @_;
+    my $msn = 0;
+    foreach my $p (@paddings)
+    {
+	$msn++;
+	die "WTF? bad uid" if ($p+1 > $uid);
+	$uid -= $p + 1;
+	last if $uid == 0;
+    }
+    return $msn;
+}
+
+sub test_imap_sort_noncontiguous
+{
+    my ($self) = @_;
+
+    xlog "Test the IMAP SORT command";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    xlog "append messages";
+    $talk->uid(1);
+    my %exp;
+    my $uid = 1;
+    my $msn = 1;
+    my @pads = (@paddings);
+    foreach my $d (@sort_data)
+    {
+	my $p = shift @pads;
+
+	for (my $i = 1 ; $i <= $p ; $i++)
+	{
+	    my $msg = $self->make_message("Filler uid $uid");
+	    $talk->store($uid, '+flags', ['\\Deleted']);
+	    $talk->expunge();
+	    $uid++;
+	}
+	$self->assert_equals($uid, msn_to_uid($msn));
+	$self->assert_equals($msn, uid_to_msn($uid));
+
+	$exp{$uid} = $self->make_filter_message($d, $uid);
+	$uid++;
+	$msn++;
+    }
+
+    my $res;
+    my @ee;
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Sort on SUBJECT in MSNs";
+    $talk->uid(0);
+    $res = $talk->sort(['subject'], 'utf-8', 'all');
+    @ee = (@sort_subject_order);
+    $self->assert_deep_equals(\@ee, $res);
+
+    xlog "Sort on SUBJECT in UIDs";
+    $talk->uid(1);
+    $res = $talk->sort(['subject'], 'utf-8', 'all');
+    map { $_ = msn_to_uid($_) } @ee;
+    $self->assert_deep_equals(\@ee, $res);
+
+    xlog "Sort on REVERSE SUBJECT in MSNs";
+    $talk->uid(0);
+    $res = $talk->sort(['reverse', 'subject'], 'utf-8', 'all');
+    @ee = (@sort_subject_order);
+    (@ee) = reverse(@ee);
+    $self->assert_deep_equals(\@ee, $res);
+
+    xlog "Sort on REVERSE SUBJECT in UIDs";
+    $talk->uid(1);
+    $res = $talk->sort(['reverse', 'subject'], 'utf-8', 'all');
+    @ee = (@sort_subject_order);
+    (@ee) = reverse(@ee);
+    map { $_ = msn_to_uid($_) } @ee;
+    $self->assert_deep_equals(\@ee, $res);
+}
+
+
 sub test_imap_sort_with_others
 {
     my ($self) = @_;
