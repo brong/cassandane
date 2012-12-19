@@ -1391,6 +1391,7 @@ sub test_engine_lookup_multi
 }
 
 sub test_imap_xconvmultisort
+    :Conversations
 {
     my ($self) = @_;
 
@@ -1495,6 +1496,7 @@ sub test_imap_xconvmultisort
 }
 
 sub test_imap_xconvmultisort_anchor
+    :Conversations
 {
     my ($self) = @_;
 
@@ -2309,6 +2311,7 @@ sub xstats_delta
 # test was written.  It simply won't work at present, so we
 # disable it.
 sub XXXtest_sphinx_xconvmultisort_optimisation
+    :Conversations
 {
     my ($self) = @_;
 
@@ -2449,6 +2452,7 @@ sub XXXtest_sphinx_xconvmultisort_optimisation
 }
 
 sub test_imap_xconvmultisort_metachar
+    :Conversations
 {
     my ($self) = @_;
 
@@ -2532,6 +2536,7 @@ sub test_imap_xconvmultisort_metachar
 }
 
 sub test_imap_xconvmultisort_unindexed_flags
+    :Conversations
 {
     my ($self) = @_;
 
@@ -2662,6 +2667,7 @@ sub test_imap_xconvmultisort_sumerian
 }
 
 sub test_imap_xconvmultisort_cjk
+    :Conversations
 {
     my ($self) = @_;
 
