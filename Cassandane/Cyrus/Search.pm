@@ -3740,7 +3740,7 @@ sub test_indexer_synclog_mode
 
     xlog "Run squatter in synclog mode";
     $self->{instance}->run_command({ cyrus => 1 },
-		    'squatter', '-v', '-f', $synclogfile);
+		    'squatter', '-iv', '-f', $synclogfile);
 
     xlog "Check that synclogfile still exists";
     $self->assert( -f $synclogfile );
