@@ -517,6 +517,69 @@ sub test_indexer_tmpfs
 
 }
 
+sub test_indexer_non_incremental
+    :SmallBatchsize
+{
+    my ($self) = @_;
+
+    xlog "test search engine message indexing without the -i option";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $N1 = 10;
+    for (1..$N1)
+    {
+	$exp{$_} = $self->make_message("Message $_");
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Before first index, there is nothing to dump";
+    $res = index_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals({}, $res);
+
+    xlog "First index run";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', $mboxname);
+
+    xlog "Check the results of the first index run";
+    $res = index_dump($self->{instance}, $mboxname);
+    my $exp_dump = {
+	    $mboxname => {
+		$uidvalidity => {
+		    map { $_ => 1 } (1..$N1)
+		}
+	    }
+	};
+    $self->assert_deep_equals($exp_dump, $res);
+
+    xlog "Delete a message";
+    $talk->store(2, '+flags', [ '\\Deleted' ]);
+    $talk->expunge();
+    delete $exp{2};
+
+    xlog "Second index run: incremental";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "The second run should have no further effect";
+    $res = index_dump($self->{instance}, $mboxname);
+    $self->assert_deep_equals($res, $exp_dump);
+
+    xlog "Third index run: non-incremental";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', $mboxname);
+
+    xlog "The third run should have noticed the deleted message";
+    $res = index_dump($self->{instance}, $mboxname);
+    delete $exp_dump->{$mboxname}->{$uidvalidity}->{2};
+    $self->assert_deep_equals($res, $exp_dump);
+}
+
+
 
 sub run_squatter
 {
