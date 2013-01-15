@@ -3502,6 +3502,134 @@ sub test_imap_xconvmultisort_russian
     }
 }
 
+sub test_imap_xconvmultisort_nofolder
+    :Conversations
+{
+    my ($self) = @_;
+
+    xlog "Test the XCONVMULTISORT command with a deleted folder. [IRIS-2469]";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+
+    my %uidvalidity;
+    my $res;
+    my @folders = ( 'kale', 'smallbatch' );
+    my $mboxname0 = "$mboxname_ext." . $folders[0];
+    my $mboxname1 = "$mboxname_ext." . $folders[1];
+    my @subjects = ( 'cosby', 'sweater' );
+
+    xlog "create folders";
+    foreach my $folder (@folders)
+    {
+	my $ff = "$mboxname_ext.$folder";
+	$talk->create($ff)
+	    or die "Cannot create folder $ff: $@";
+	$res = $talk->status($ff, ['uidvalidity']);
+	$uidvalidity{$ff} = $res->{uidvalidity};
+    }
+
+    xlog "Append messages";
+    my %exp;
+    my $uid = 1;
+    foreach my $subject (@subjects)
+    {
+	foreach my $folder (@folders)
+	{
+	    my $ff = "$mboxname_ext.$folder";
+	    $self->{store}->set_folder($ff);
+	    $self->{gen}->set_next_uid($uid);
+	    my $msg = $self->make_message("$subject $folder $uid");
+	    $exp{$ff}{$uid} = $msg;
+	}
+	$uid++;
+    }
+
+    xlog "Check the messages got there";
+    foreach my $folder (@folders)
+    {
+	my $ff = "$mboxname_ext.$folder";
+	$self->{store}->set_folder($ff);
+	$self->check_messages($exp{$ff});
+    }
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-irvv', $mboxname_int);
+
+    $uid = 1;
+    foreach my $subject (@subjects)
+    {
+	xlog "Search for $subject";
+	$res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', $subject ],
+					      sort => [ 'folder', 'uid' ])
+	    or die "XCONVMULTISORT failed: $@";
+	delete $res->{highestmodseq} if defined $res;
+	$self->assert_deep_equals({
+	    total => 2,
+	    position => 1,
+	    xconvmulti => [
+		[ $mboxname0, $uid ],
+		[ $mboxname1, $uid ]
+	    ],
+	    uidvalidity => {
+		$mboxname0 => $uidvalidity{$mboxname0},
+		$mboxname1 => $uidvalidity{$mboxname1}
+	    }
+	}, $res);
+	$uid++;
+    }
+
+    xlog "Delete folder $mboxname1";
+    $talk->delete($mboxname1);
+
+    $uid = 1;
+    foreach my $subject (@subjects)
+    {
+	xlog "Search for $subject";
+	$res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', $subject ],
+					      sort => [ 'folder', 'uid' ])
+	    or die "XCONVMULTISORT failed: $@";
+	delete $res->{highestmodseq} if defined $res;
+	$self->assert_deep_equals({
+	    total => 1,
+	    position => 1,
+	    xconvmulti => [
+		[ $mboxname0, $uid ]
+	    ],
+	    uidvalidity => {
+		$mboxname0 => $uidvalidity{$mboxname0}
+	    }
+	}, $res);
+	$uid++;
+    }
+
+    xlog "Delete message 2";
+    $talk->store(2, '+flags', ['\\Deleted']);
+    $talk->expunge();
+
+    $uid = 1;
+    my $subject = $subjects[0];
+    xlog "Search for $subject";
+    $res = $self->{store}->xconvmultisort(search => [ 'fuzzy', 'subject', $subject ],
+					  sort => [ 'folder', 'uid' ])
+	or die "XCONVMULTISORT failed: $@";
+    delete $res->{highestmodseq} if defined $res;
+    $self->assert_deep_equals({
+	total => 1,
+	position => 1,
+	xconvmulti => [
+	    [ $mboxname0, 1 ]
+	],
+	uidvalidity => {
+	    $mboxname0 => $uidvalidity{$mboxname0}
+	}
+    }, $res);
+}
+
 sub test_imap_xsnippets
     :Conversations
 {
