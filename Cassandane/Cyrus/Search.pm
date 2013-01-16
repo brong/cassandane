@@ -3646,6 +3646,8 @@ sub test_imap_xsnippets
 
     # check IMAP server has the XCONVERSATIONS capability
     $self->assert($talk->capability()->{xconversations});
+    # check IMAP server has the SEARCH=FUZZY capability
+    $self->assert($talk->capability()->{'search=fuzzy'});
 
     my $res = $talk->status($mboxname_ext, ['uidvalidity']);
     my $uidvalidity = $res->{uidvalidity};
@@ -3670,59 +3672,61 @@ sub test_imap_xsnippets
 	{
 	    query => [ 'from', 'banksy' ],
 	    expected => [
-		[ 'FROM', 'Denim &lt;scenester@<b>banksy</b>.com&gt;' ]
+		{ uid => 1, part => 'FROM', str => 'Denim &lt;scenester@<b>banksy</b>.com&gt;' }
 	    ]
 	},
 	{
 	    query => [ 'subject', 'cred' ],
 	    expected => [
-		[ 'SUBJECT', 'synth <b>cred</b>' ]
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' }
 	    ]
 	},
 	{
 	    query => [ 'body', 'ethical' ],
 	    expected => [
-		[ 'BODY', 'occupy <b>ethical</b> ' ]
+		{ uid => 1, part => 'BODY', str => 'occupy <b>ethical</b> ' }
 	    ]
 	},
 	# TEXT matches any field
 	{
 	    query => [ 'text', 'ethical' ],
 	    expected => [
-		[ 'BODY', 'occupy <b>ethical</b> ' ]
+		{ uid => 1, part => 'BODY', str => 'occupy <b>ethical</b> ' }
 	    ]
 	},
 	{
 	    query => [ 'text', 'cred' ],
 	    expected => [
-		[ 'SUBJECT', 'synth <b>cred</b>' ],
-		[ 'HEADERS', "Transfer-Encoding: 7bit " .
-			     "Subject: synth <b>cred</b> " .
-			     "From: Denim &lt;scenester\@banksy." ]
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' },
+		{ uid => 1, part => 'HEADERS',
+		  str => "Transfer-Encoding: 7bit " .
+			 "Subject: synth <b>cred</b> " .
+			 "From: Denim &lt;scenester\@banksy." }
 	    ]
 	},
 	{
 	    query => [ 'text', 'denim' ],
 	    expected => [
-		[ 'FROM', '<b>Denim</b> &lt;scenester@banksy.com&gt;' ],
-		[ 'HEADERS', "7bit " .
-			     "Subject: synth cred " .
-			     "From: <b>Denim</b> &lt;scenester\@banksy.com&gt; " .
-			     "Message-" ]
+		{ uid => 1, part => 'FROM', str => '<b>Denim</b> &lt;scenester@banksy.com&gt;' },
+		{ uid => 1, part => 'HEADERS',
+		  str => "7bit " .
+			 "Subject: synth cred " .
+			 "From: <b>Denim</b> &lt;scenester\@banksy.com&gt; " .
+			 "Message-" }
 	    ]
 	},
 	{
 	    query => [ 'from', 'banksy', 'subject', 'cred' ],
 	    expected => [
-		[ 'FROM', 'Denim &lt;scenester@<b>banksy</b>.com&gt;' ],
-		[ 'SUBJECT', 'synth <b>cred</b>' ]
+		{ uid => 1, part => 'FROM', str => 'Denim &lt;scenester@<b>banksy</b>.com&gt;' },
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' }
 	    ]
 	},
 	{
 	    query => [ 'or', 'from', 'banksy', 'subject', 'cred' ],
 	    expected => [
-		[ 'FROM', 'Denim &lt;scenester@<b>banksy</b>.com&gt;' ],
-		[ 'SUBJECT', 'synth <b>cred</b>' ]
+		{ uid => 1, part => 'FROM', str => 'Denim &lt;scenester@<b>banksy</b>.com&gt;' },
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' }
 	    ]
 	},
     );
@@ -3731,7 +3735,7 @@ sub test_imap_xsnippets
     {
 	xlog "Run XSNIPPETS, query " . join(' ', @{$c->{query}});
 	$res = $self->{store}->xsnippets(
-	    "(($mboxname_ext $uidvalidity (1)))",
+	    "(($mboxname_ext $uidvalidity (1 2)))",
 	    'utf-8',
 	    'fuzzy', [@{$c->{query}}])
 	    or die "XSNIPPETS failed: $@";
@@ -3742,9 +3746,9 @@ sub test_imap_xsnippets
 		    {
 			mailbox => $mboxname_ext,
 			uidvalidity => $uidvalidity,
-			uid => 1,
-			part => $_->[0],
-			snippet => $_->[1],
+			uid => $_->{uid},
+			part => $_->{part},
+			snippet => $_->{str}
 		    };
 		} @{$c->{expected}}
 	    ]
