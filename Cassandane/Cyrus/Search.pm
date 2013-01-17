@@ -3661,7 +3661,13 @@ sub test_imap_xsnippets
 					    domain => 'banksy.com'
 				  ),
 				  body => "occupy ethical\r\n");
-
+    $exp{B} = $self->make_message('alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ' .
+				  'cosby ' .
+				  'nu xi omicron pi rho sigma tau upsilon phi chi psi omega',
+				  body => 'Alef Bet Gimel Dalet He Vav Zayin Het Tet Yod Kaf ' .
+					  'sweater '.
+					  'Lamed Mem Nun Samekh Ayin Pe Tsadi Qof Resh Shin Tav' .
+					  "\r\n");
     xlog "Index the messages";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
 
@@ -3729,6 +3735,26 @@ sub test_imap_xsnippets
 		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' }
 	    ]
 	},
+	# BODY has a 5-word context
+	{
+	    query => [ 'BODY', 'sweater' ],
+	    expected => [
+		{ uid => 2, part => 'BODY',
+		  str => 'Zayin Het Tet Yod Kaf ' .
+			 '<b>sweater</b> '.
+			 'Lamed Mem Nun Samekh Ayin' }
+	    ]
+	},
+	# SUBJECT has unlimited context (IRIS-2460)
+	{
+	    query => [ 'SUBJECT', 'cosby' ],
+	    expected => [
+		{ uid => 2, part => 'SUBJECT',
+		  str => 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ' .
+			 '<b>cosby</b> ' .
+			 'nu xi omicron pi rho sigma tau upsilon phi chi psi omega' }
+	    ]
+	}
     );
 
     foreach my $c (@cases)
