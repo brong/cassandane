@@ -3668,6 +3668,20 @@ sub test_imap_xsnippets
 					  'sweater '.
 					  'Lamed Mem Nun Samekh Ayin Pe Tsadi Qof Resh Shin Tav' .
 					  "\r\n");
+    $exp{C} = $self->make_message('message 3',
+				  mime_type => 'multipart/alternate',
+				  mime_boundary => 'NEMO',
+				  body =>
+"--NEMO\r\n" .
+"Content-Type: text/plain\r\n" .
+"\r\n" .
+"alpha locavore beta\r\n" .
+"--NEMO\r\n" .
+"Content-Type: text/html\r\n" .
+"\r\n" .
+"<div>gamma <i>locavore</i> <span class=\"foo\">delta</span></div>\r\n" .
+"--NEMO--\r\n");
+
     xlog "Index the messages";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
 
@@ -3754,14 +3768,29 @@ sub test_imap_xsnippets
 			 '<b>cosby</b> ' .
 			 'nu xi omicron pi rho sigma tau upsilon phi chi psi omega' }
 	    ]
-	}
+	},
+	# context is broken at the boundaries of text-like MIME parts
+	# and does not include MIME part headers (IRIS-2511)
+	{
+	    query => [ 'BODY', 'locavore' ],
+	    expected => [
+		{ uid => 3, part => 'BODY',
+		  str => 'alpha ' .
+			 '<b>locavore</b> ' .
+			 'beta' .
+			 '...' .
+			 'gamma ' .
+			 '<b>locavore</b> ' .
+			 'delta ' }
+	    ]
+	},
     );
 
     foreach my $c (@cases)
     {
 	xlog "Run XSNIPPETS, query " . join(' ', @{$c->{query}});
 	$res = $self->{store}->xsnippets(
-	    "(($mboxname_ext $uidvalidity (1 2)))",
+	    "(($mboxname_ext $uidvalidity (1 2 3)))",
 	    'utf-8',
 	    'fuzzy', [@{$c->{query}}])
 	    or die "XSNIPPETS failed: $@";
