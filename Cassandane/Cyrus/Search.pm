@@ -3681,6 +3681,11 @@ sub test_imap_xsnippets
 "\r\n" .
 "<div>gamma <i>locavore</i> <span class=\"foo\">delta</span></div>\r\n" .
 "--NEMO--\r\n");
+    $exp{D} = $self->make_message('message 4',
+				  body => 'alpha beta gamma delta ' .
+					  'put-a-bird-on-it ' .
+					  'epsilon zeta eta theta' .
+					  "\r\n");
 
     xlog "Index the messages";
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
@@ -3784,13 +3789,37 @@ sub test_imap_xsnippets
 			 'delta ' }
 	    ]
 	},
+	# search terms including punctuation are highlighted (IRIS-2510)
+	{
+	    query => [ 'BODY', 'bird' ],
+	    expected => [
+		{ uid => 4, part => 'BODY',
+		  str => 'beta gamma delta put-a-<b>bird</b>-on-it epsilon zeta eta' }
+	    ]
+	},
+	{
+	    query => [ 'BODY', 'a-bird' ],
+	    expected => [
+		{ uid => 4, part => 'BODY',
+		  str => 'alpha beta gamma delta put-<b>a</b>-<b>bird</b>-on-it epsilon zeta eta' }
+	    ]
+	},
+	{
+	    query => [ 'BODY', 'put-a-bird-on-it' ],
+	    expected => [
+		{ uid => 4, part => 'BODY',
+		  str => 'alpha beta gamma delta ' .
+			 '<b>put</b>-<b>a</b>-<b>bird</b>-<b>on</b>-<b>it</b> '.
+			 'epsilon zeta eta theta ' }
+	    ]
+	},
     );
 
     foreach my $c (@cases)
     {
 	xlog "Run XSNIPPETS, query " . join(' ', @{$c->{query}});
 	$res = $self->{store}->xsnippets(
-	    "(($mboxname_ext $uidvalidity (1 2 3)))",
+	    "(($mboxname_ext $uidvalidity (" . join(' ', 1..scalar(keys %exp)) . ")))",
 	    'utf-8',
 	    'fuzzy', [@{$c->{query}}])
 	    or die "XSNIPPETS failed: $@";
