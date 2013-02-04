@@ -866,6 +866,10 @@ my @filter_tests = (
     { query => [ qw(or pickled tattooed williamsburg) ], expected => [ 1, 4, 6 ] },
     { query => [ qw(or quinoa organic beer) ], expected => [ 1..10 ] },
     { query => [ qw(or quinoa irony beer) ], expected => [ 1..10 ] },
+    # Test NOT of a term
+    { query => [ qw(not quinoa) ], expected => [ 1..9 ] },
+    { query => [ qw(not pickled) ], expected => [ 2..10 ] },
+    { query => [ qw(not sartorial) ], expected => [ 2..6, 8, 10 ] },
     # Test each term that appears in the Subject: of just one message
     { query => 'subject:umami', expected => [ 1 ] },
     { query => 'subject:lomo', expected => [ 2 ] },
@@ -969,19 +973,12 @@ sub filter_test_to_squatter_search
     {
 	my @tt = ( @$t );
 	my $c = shift(@tt);
-	if ($c eq 'and')
+	if ($c =~ m/^(and|or|not)$/)
 	{
 	    return join(' ',
-			'__begin:and',
+			"__begin:$c",
 			map { filter_test_to_squatter_search($_) } @tt,
-			'__end:and');
-	}
-	elsif ($c eq 'or')
-	{
-	    return join(' ',
-			'__begin:or',
-			map { filter_test_to_squatter_search($_) } @tt,
-			'__end:or');
+			"__end:$c");
 	}
 	else {
 	    return filter_test_to_squatter_search($c);
@@ -1011,6 +1008,12 @@ sub filter_test_to_imap_search2
 	{
 	    die "Need exactly 2 OR children" if (scalar @tt != 2);
 	    return join(' ', 'or',
+			map { filter_test_to_imap_search2($_) } @tt);
+	}
+	elsif ($c eq 'not')
+	{
+	    die "Need exactly 1 NOT child" if (scalar @tt != 1);
+	    return join(' ', 'not',
 			map { filter_test_to_imap_search2($_) } @tt);
 	}
 	else {
