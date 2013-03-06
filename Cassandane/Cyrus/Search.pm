@@ -89,6 +89,14 @@ Cassandane::Cyrus::TestCase::magic(SmallBatchsize => sub {
 Cassandane::Cyrus::TestCase::magic(NoIndexHeaders => sub {
     shift->config_set(search_index_headers => 'no');
 });
+Cassandane::Cyrus::TestCase::magic(MultiTier => sub {
+    shift->config_set(
+	xapian_tiers => 't m d',
+	'tsearchpartition-default' => '@basedir@/search-t',
+	'msearchpartition-default' => '@basedir@/search-m',
+	'dsearchpartition-default' => '@basedir@/search-d',
+    );
+});
 
 sub new
 {
@@ -4729,5 +4737,64 @@ sub test_imap_search
     }
 }
 
+sub test_imap_multitier
+    :MultiTier
+{
+    my ($self) = @_;
+
+    xlog "Test tiered indexing";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $uid = 1;
+    foreach my $d (@filter_data)
+    {
+	$exp{$uid} = $self->make_filter_message($d, $uid);
+
+	xlog "check the messages got there";
+	$self->check_messages(\%exp);
+
+	xlog "Index the messages";
+	$self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+	xlog "Check the results of the index run";
+	my @tests = @filter_tests;
+	$#tests = $uid - 1;
+	foreach my $t (@tests)
+	{
+	    my $search = filter_test_to_imap_search($t->{query});
+	    next if !defined $search;
+
+	    xlog "Testing query \"$search\"";
+
+	    $res = $talk->search({ Raw => "fuzzy ($search)" })
+		or die "Cannot search: $@";
+	    $self->assert_deep_equals($t->{expected}, $res);
+	}
+
+	if ($uid == 1) {
+	    xlog "Compressing to tier 1";
+	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname);
+	}
+
+	if ($uid == 3) {
+	    xlog "Compressing to tier 2";
+	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 2, $mboxname);
+	}
+
+	if ($uid == 5) {
+	    xlog "Compressing to tier 1 via /tmp";
+	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, -T => '/tmp', $mboxname);
+	}
+
+	$uid++;
+    }
+}
 
 1;
