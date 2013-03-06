@@ -3586,6 +3586,9 @@ sub test_imap_xconvmultisort_nofolder
 	$uid++;
     }
 
+    $talk->unselect();
+    $self->{store}->set_folder($mboxname0);
+    $self->{store}->_select();
     xlog "Delete folder $mboxname1";
     $talk->delete($mboxname1);
 
