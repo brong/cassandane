@@ -1520,9 +1520,10 @@ sub test_db_audit
     $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
     $self->assert_matches(qr/is OK$/m, $output);
     $self->assert_does_not_match(qr/is BROKEN/m, $output);
-    $self->assert_does_not_match(qr/^ADDED /m, $output);
-    $self->assert_does_not_match(qr/^MISSING /m, $output);
-    $self->assert_does_not_match(qr/^CHANGED /m, $output);
+    $self->assert_does_not_match(qr/^REALONLY: /m, $output);
+    $self->assert_does_not_match(qr/^TEMPONLY: /m, $output);
+    $self->assert_does_not_match(qr/^REAL: /m, $output);
+    $self->assert_does_not_match(qr/^TEMP: /m, $output);
 
     my ($key_to_change, $key_to_delete, $key_to_add, @junk) = keys %Bkeys;
     # Make $key_to_add a different key from all the others
@@ -1541,14 +1542,12 @@ sub test_db_audit
     $output = $self->run_conversations_audit();
 
     xlog "Check that audit reported the correct differences";
-    $self->assert_matches(qr/^RECORDS differ/m, $output);
-    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
     $self->assert_does_not_match(qr/is OK$/m, $output);
     $self->assert_matches(qr/is BROKEN \(1 differences\)$/m, $output);
-    $self->assert_does_not_match(qr/^ADDED /m, $output);
-    $self->assert_does_not_match(qr/^MISSING /m, $output);
-    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m,
-    $output);
+    $self->assert_does_not_match(qr/^REALONLY: /m, $output);
+    $self->assert_does_not_match(qr/^TEMPONLY: /m, $output);
+    $self->assert_matches(qr/^REAL: \"$key_to_change\"/m, $output);
+    $self->assert_matches(qr/^TEMP: \"$key_to_change\"/m, $output);
 
     xlog "Damage the DB by deleting a record";
     $dbtool->delete($key_to_delete);
@@ -1556,13 +1555,12 @@ sub test_db_audit
     $output = $self->run_conversations_audit();
 
     xlog "Check that audit reported the correct differences";
-    $self->assert_matches(qr/^RECORDS differ/m, $output);
-    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
     $self->assert_does_not_match(qr/is OK$/m, $output);
     $self->assert_matches(qr/is BROKEN \(2 differences\)$/m, $output);
-    $self->assert_does_not_match(qr/^ADDED /m, $output);
-    $self->assert_matches(qr/^MISSING key \"$key_to_delete\"/m, $output);
-    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
+    $self->assert_does_not_match(qr/^REALONLY: /m, $output);
+    $self->assert_matches(qr/^TEMPONLY: \"$key_to_delete\"/m, $output);
+    $self->assert_matches(qr/^REAL: \"$key_to_change\"/m, $output);
+    $self->assert_matches(qr/^TEMP: \"$key_to_change\"/m, $output);
 
     xlog "Damage the DB by adding a record";
     $dbtool->set($key_to_add, 'This data is utterly bogus');
@@ -1570,13 +1568,12 @@ sub test_db_audit
     $output = $self->run_conversations_audit();
 
     xlog "Check that audit reported the correct differences";
-    $self->assert_matches(qr/^RECORDS differ/m, $output);
-    $self->assert_does_not_match(qr/^FOLDER_NAMES differ/m, $output);
     $self->assert_does_not_match(qr/is OK$/m, $output);
     $self->assert_matches(qr/is BROKEN \(3 differences\)$/m, $output);
-    $self->assert_matches(qr/^ADDED key \"$key_to_add\"/m, $output);
-    $self->assert_matches(qr/^MISSING key \"$key_to_delete\"/m, $output);
-    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
+    $self->assert_matches(qr/^REALONLY: \"$key_to_add\"/m, $output);
+    $self->assert_matches(qr/^TEMPONLY: \"$key_to_delete\"/m, $output);
+    $self->assert_matches(qr/^REAL: \"$key_to_change\"/m, $output);
+    $self->assert_matches(qr/^TEMP: \"$key_to_change\"/m, $output);
 
     xlog "Damage the DB by trashing \$FOLDER_NAMES";
     $dbtool->set('$FOLDER_NAMES', '()');
@@ -1584,14 +1581,14 @@ sub test_db_audit
     $output = $self->run_conversations_audit();
 
     xlog "Check that audit reported the correct differences";
-    $self->assert_matches(qr/^RECORDS differ/m, $output);
-    $self->assert_matches(qr/^FOLDER_NAMES differ/m, $output);
-    $self->assert_matches(qr/^MISSING \"user.cassandane\" at 0/m, $output);
     $self->assert_does_not_match(qr/is OK$/m, $output);
     $self->assert_matches(qr/is BROKEN \(4 differences\)$/m, $output);
-    $self->assert_matches(qr/^ADDED key \"$key_to_add\"/m, $output);
-    $self->assert_matches(qr/^MISSING key \"$key_to_delete\"/m, $output);
-    $self->assert_matches(qr/^CHANGED key \"$key_to_change\"/m, $output);
+    $self->assert_matches(qr/^REALONLY: \"$key_to_add\"/m, $output);
+    $self->assert_matches(qr/^TEMPONLY: \"$key_to_delete\"/m, $output);
+    $self->assert_matches(qr/^REAL: \"$key_to_change\"/m, $output);
+    $self->assert_matches(qr/^TEMP: \"$key_to_change\"/m, $output);
+    $self->assert_matches(qr/^REAL: \"\$FOLDER_NAMES\" data \"\(\)\"/m, $output);
+    $self->assert_matches(qr/^TEMP: \"\$FOLDER_NAMES\" data \"\(user.cassandane\)\"/m, $output);
 }
 
 sub test_db_audit_rename
