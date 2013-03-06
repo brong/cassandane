@@ -46,6 +46,8 @@ use IO::File;
 
 use lib '.';
 use base qw(Cassandane::Cyrus::TestCase);
+use Cassandane::Mboxname;
+use Cassandane::Address;
 use Cassandane::Util::Log;
 
 sub new
@@ -1094,28 +1096,34 @@ sub test_long_header_field
 
     xlog "Testing a very long header field";
 
+    my $N = 1040;
     my $svc = $self->{instance}->get_service('imap');
     $self->{store} = $svc->create_store(username => 'cassandane');
     $self->{store}->set_fetch_attributes('uid');
     my $imaptalk = $self->{store}->get_client();
 
     xlog "Create the target folder";
-    my $target = $self->{instance}->mboxname('inbox', 'keffiyeh');
+    my $target = Cassandane::Mboxname->new(config => $self->{instance}->{config},
+					   userid => 'cassandane',
+					   box => 'keffiyeh')->to_external();
     $imaptalk->create($target)
 	 or die "Cannot create $target: $@";
 
     # Handcrafted From: address to match the rule
-    my $from = 'Cosby <etsy@quinoa.com>';
+    my $from = Cassandane::Address->new(
+		    name => 'Cosby',
+		    localpart => 'etsy',
+		    domain => 'quinoa.com');
     # Handcrafted evil To: address
-    my $to = '';
-    map { $to .= 'B' } (1..1040);
-    $to .= '@b.com';
+    my $to = Cassandane::Address->new(
+		    localpart => 'B' x $N,
+		    domain => 'b.com');
 
     xlog "Install the sieve script";
     $self->install_sieve_script(<<EOF
 require ["fileinto"];
 if header :contains "From" "etsy" {
-    fileinto "keffiyeh";
+    fileinto "inbox.keffiyeh";
     stop;
 }
 EOF
@@ -1126,6 +1134,12 @@ EOF
 				     from => $from,
 				     to => $to);
     $self->{instance}->deliver($msg);
+
+    xlog "Check that the message actually had a long header";
+    $self->assert_matches(qr/^To:.*B{$N}\@b/m, $msg);
+    xlog "Check that the message actually has the expected From";
+    $self->assert_matches(qr/^From:.*etsy/m, $msg);
+
 
     xlog "Check that the message made it to the target folder";
     $self->{store}->set_folder($target);

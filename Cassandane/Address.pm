@@ -91,11 +91,9 @@ sub address
 sub as_string
 {
     my ($self) = @_;
-    my $s = '';
-    $s .= $self->{name} . ' '
+    return $self->{name} . ' <' . $self->address() . '>'
 	if defined $self->{name};
-    $s .= '<' . $self->address() . '>';
-    return $s;
+    return $self->address();
 }
 
 
