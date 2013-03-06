@@ -62,8 +62,8 @@ sub test_default_ctor
     $self->assert($a->localpart eq 'unknown-user');
     $self->assert($a->domain eq 'unspecified-domain');
     $self->assert($a->address eq 'unknown-user@unspecified-domain');
-    $self->assert($a->as_string eq '<unknown-user@unspecified-domain>');
-    $self->assert("" . $a eq '<unknown-user@unspecified-domain>');
+    $self->assert($a->as_string eq 'unknown-user@unspecified-domain');
+    $self->assert("" . $a eq 'unknown-user@unspecified-domain');
 }
 
 sub test_full_ctor
