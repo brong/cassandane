@@ -1762,7 +1762,7 @@ sub test_bogus_in_reply_to
     $self->check_messages(\%exp);
 
     xlog "generating message B, bogus reply to A";
-    $exp{B} = $self->make_message("Message B",
+    $exp{B} = $self->make_message("Re: Message A",
 	references => $exp{A}->messageid,
 	extra_headers => [
 	    [ "In-Reply-To" => _bogus_nmh_inreplyto($exp{A}) ],
@@ -1780,7 +1780,7 @@ sub test_bogus_in_reply_to
 
     xlog "generating message D, bogus reply to C, unrelated to A or B";
     $self->{gen}->set_next_uid(3);
-    $exp{D} = $self->make_message("Message D",
+    $exp{D} = $self->make_message("Re: Message C",
 	references => $exp{C}->messageid,
 	extra_headers => [
 	    [ "In-Reply-To" => _bogus_nmh_inreplyto($exp{C}) ],
