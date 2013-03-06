@@ -883,16 +883,17 @@ sub bogus_test_fm_webui_draft
     $exp{C} = $exp{A}->clone();
     $exp{C}->set_headers('Subject', 'Draft message was once A');
     $exp{C}->set_body("Even more completely different text here\r\n");
-    $exp{C}->set_attributes(uid => 3, cid => $exp{C}->make_cid());
+    $exp{C}->set_attributes(uid => 3);
 
     $self->{store}->write_begin();
     $self->{store}->write_message($exp{C});
     $self->{store}->write_end();
     $self->check_messages(\%exp, keyed_on => 'uid');
 
+    xlog "Should all have the same CID";
     $self->assert_str_equals($exp{A}->cid(), $exp{B}->cid());
-    $self->assert_str_not_equals($exp{A}->cid(), $exp{C}->cid());
-    $self->assert_str_not_equals($exp{B}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{A}->cid(), $exp{C}->cid());
+    $self->assert_str_equals($exp{B}->cid(), $exp{C}->cid());
 }
 
 #
