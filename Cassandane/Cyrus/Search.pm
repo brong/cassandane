@@ -4797,4 +4797,194 @@ sub test_imap_multitier
     }
 }
 
+sub test_multitier_missing
+    :MultiTier
+{
+    my ($self) = @_;
+
+    xlog "Test tiered indexing with deleted data";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $N = 20;
+    for (1..$N) {
+	my $msg = $self->make_message("First Message $_");
+	$exp{$_} = $msg;
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Compress to tier 1";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname);
+
+    xlog "Add a second lot of messages";
+    for (1..$N) {
+	my $msg = $self->make_message("Second Message $_");
+	$exp{$N+$_} = $msg;
+    }
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages again";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "All messages can be searched";
+    $res = $talk->search({ Raw => "fuzzy (subject Message)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 2*$N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject First)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject Second)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    xlog "Nuke the first search tier";
+    system('rm', '-rf', $self->{instance}->{basedir} . "/search-t");
+
+    xlog "Can still see the messages indexed earlier";
+    $res = $talk->search({ Raw => "fuzzy (subject First)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    xlog "None of the second set of messages are visible";
+    $res = $talk->search({ Raw => "fuzzy (subject Message)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject Second)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 0);
+
+    xlog "Run squatter again to update the index";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "All messages are visible again";
+    $res = $talk->search({ Raw => "fuzzy (subject Message)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 2*$N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject First)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject Second)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+}
+
+sub test_multitier_missing_middle
+    :MultiTier
+{
+    my ($self) = @_;
+
+    xlog "Test tiered indexing with deleted data";
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname = 'user.cassandane';
+
+    my $res = $talk->status($mboxname, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "append some messages";
+    my %exp;
+    my $N = 20;
+    for (1..$N) {
+	my $msg = $self->make_message("First Message $_");
+	$exp{$_} = $msg;
+    }
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Compress to tier 2";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 2, $mboxname);
+
+    xlog "Add a second lot of messages";
+    for (1..$N) {
+	my $msg = $self->make_message("Second Message $_");
+	$exp{$N+$_} = $msg;
+    }
+
+    xlog "check the messages got there";
+    $self->check_messages(\%exp);
+
+    xlog "Index the messages again";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "Compress to tier 1";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname);
+
+    # add a bonus message
+    $self->make_message("Third Message");
+
+    xlog "Index the messages again";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "All messages can be searched";
+    $res = $talk->search({ Raw => "fuzzy (subject Message)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 2*$N + 1);
+
+    $res = $talk->search({ Raw => "fuzzy (subject First)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject Second)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    xlog "Nuke the second search tier";
+    system('rm', '-rf', $self->{instance}->{basedir} . "/search-m");
+
+    xlog "Can still see the messages indexed earlier";
+    $res = $talk->search({ Raw => "fuzzy (subject First)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    xlog "None of the second set of messages are visible";
+    $res = $talk->search({ Raw => "fuzzy (subject Second)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 0);
+
+    xlog "But the third mesage is ";
+    $res = $talk->search({ Raw => "fuzzy (subject Third)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 1);
+
+    xlog "Run squatter again to update the index";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
+
+    xlog "All messages are visible again";
+    $res = $talk->search({ Raw => "fuzzy (subject Message)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 2*$N + 1);
+
+    $res = $talk->search({ Raw => "fuzzy (subject First)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject Second)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), $N);
+
+    $res = $talk->search({ Raw => "fuzzy (subject Third)" })
+	or die "Cannot search: $@";
+    $self->assert_equals(scalar(@$res), 1);
+}
+
 1;
