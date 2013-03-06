@@ -1012,7 +1012,7 @@ sub start
 	$self->_generate_master_conf();
 	$self->_fix_ownership();
     }
-    elsif (!scalar $self->{services})
+    elsif (!scalar %{$self->{services}})
     {
 	$self->_add_services_from_cyrus_conf();
     }
