@@ -51,17 +51,8 @@ use Cassandane::Util::Log;
 Cassandane::Cyrus::TestCase::magic(DuplicateSuppressionOff => sub {
     shift->config_set(duplicatesuppression => 0);
 });
-Cassandane::Cyrus::TestCase::magic(DuplicateSuppressionName => sub {
-    shift->config_set(
-	duplicatesuppression => 1,
-	duplicate_mailbox_mode => 'name'
-    );
-});
-Cassandane::Cyrus::TestCase::magic(DuplicateSuppressionUniqueID => sub {
-    shift->config_set(
-	duplicatesuppression => 1,
-	duplicate_mailbox_mode => 'uniqueid'
-    );
+Cassandane::Cyrus::TestCase::magic(DuplicateSuppressionOn => sub {
+    shift->config_set(duplicatesuppression => 1);
 });
 Cassandane::Cyrus::TestCase::magic(FuzzyMatch => sub {
     shift->config_set(lmtp_fuzzy_mailbox_match => 1);
@@ -392,63 +383,12 @@ sub test_duplicate_suppression_off
 }
 
 sub test_duplicate_suppression_on
-    :DuplicateSuppressionName
+    :DuplicateSuppressionOn
 {
     my ($self) = @_;
 
     xlog "Testing behaviour with duplicate suppression on";
-
-    # test data from hipsteripsum.me
-    my $folder1 = "INBOX.mustache";
-    my $folder2 = "INBOX.freegan";
-
-    xlog "Create the target folder";
-    my $imaptalk = $self->{store}->get_client();
-    $imaptalk->create($folder1)
-	or die "Cannot create $folder1: $@";
-    $self->{store}->set_fetch_attributes('uid');
-
-    xlog "Deliver a message";
-    my %msgs;
-    $msgs{1} = $self->{gen}->generate(subject => "Message 1");
-    $msgs{1}->set_attribute(uid => 1);
-    $self->{instance}->deliver($msgs{1}, folder => $folder1);
-
-    xlog "Check that the message made it";
-    $self->{store}->set_folder($folder1);
-    $self->check_messages(\%msgs, check_guid => 0, keyed_on => 'uid');
-
-    xlog "Try to deliver the same message again";
-    $self->{instance}->deliver($msgs{1}, folder => $folder1);
-
-    xlog "Check that second copy of the message didn't make it";
-    $self->{store}->set_folder($folder1);
-    $self->check_messages(\%msgs, check_guid => 0, keyed_on => 'uid');
-
-    xlog "Rename the folder";
-    $imaptalk->rename($folder1, $folder2)
-	or die "Cannot rename $folder1 to $folder2: $@";
-
-    xlog "Try to deliver the same message again";
-    $self->{instance}->deliver($msgs{1}, folder => $folder2);
-
-    xlog "Check that third copy of the message DID make it";
-    # This is perhaps surprising but is the expected behaviour
-    # for duplicate_mailbox_mode = name.
-    $msgs{3} = $msgs{1}->clone();
-    $msgs{3}->set_attribute(uid => 2);
-    $self->{store}->set_folder($folder2);
-    $self->check_messages(\%msgs, check_guid => 0, keyed_on => 'uid');
-}
-
-sub test_duplicate_suppression_on_uniqueid
-    :DuplicateSuppressionUniqueID
-{
-    my ($self) = @_;
-
-    xlog "Testing behaviour with duplicate suppression on";
-    xlog "and duplicate_mailbox_mode = uniqueid and ";
-    xlog "interaction with RENAME";
+    xlog "and interaction with RENAME";
 
     # test data from hipsteripsum.me
     my $folder1 = "INBOX.sustainable";
@@ -485,13 +425,12 @@ sub test_duplicate_suppression_on_uniqueid
     $self->{instance}->deliver($msgs{1}, folder => $folder2);
 
     xlog "Check that third copy of the message DIDN'T make it";
-    # This is the whole point of duplicate_mailbox_mode = uniqueid.
     $self->{store}->set_folder($folder2);
     $self->check_messages(\%msgs, check_guid => 0, keyed_on => 'uid');
 }
 
-sub test_duplicate_suppression_on_uniqueid_delete
-    :DuplicateSuppressionUniqueID
+sub test_duplicate_suppression_on_delete
+    :DuplicateSuppressionOn
 {
     my ($self) = @_;
 
@@ -536,8 +475,8 @@ sub test_duplicate_suppression_on_uniqueid_delete
     $self->check_messages(\%msgs, check_guid => 0, keyed_on => 'uid');
 }
 
-sub test_duplicate_suppression_on_uniqueid_badmbox
-    :DuplicateSuppressionUniqueID
+sub test_duplicate_suppression_on_badmbox
+    :DuplicateSuppressionOn
 {
     my ($self) = @_;
 
@@ -574,7 +513,7 @@ sub test_duplicate_suppression_on_uniqueid_badmbox
 }
 
 sub test_duplicate_suppression_x_me_message_id
-    :DuplicateSuppressionName
+    :DuplicateSuppressionOn
 {
     my ($self) = @_;
 
