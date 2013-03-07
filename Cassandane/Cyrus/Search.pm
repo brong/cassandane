@@ -4987,4 +4987,223 @@ sub test_multitier_missing_middle
     $self->assert_equals(scalar(@$res), 1);
 }
 
+sub test_imap_xsnippets_multitier
+    :Conversations
+    :MultiTier
+{
+    my ($self) = @_;
+
+    xlog "Test the XSNIPPETS command";
+
+    # Note, Squat does not support XSNIPPETS
+    return if $search_engine eq 'squat';
+
+    my $talk = $self->{store}->get_client();
+    my $mboxname_int = 'user.cassandane';
+    my $mboxname_ext = 'INBOX';
+
+    # check IMAP server has the XCONVERSATIONS capability
+    $self->assert($talk->capability()->{xconversations});
+    # check IMAP server has the SEARCH=FUZZY capability
+    $self->assert($talk->capability()->{'search=fuzzy'});
+
+    my $res = $talk->status($mboxname_ext, ['uidvalidity']);
+    my $uidvalidity = $res->{uidvalidity};
+
+    xlog "Append messages";
+    my %exp;
+    $exp{A} = $self->make_message('synth cred',
+				  from => Cassandane::Address->new(
+					    name => "Denim",
+					    localpart => 'scenester',
+					    domain => 'banksy.com'
+				  ),
+				  body => "occupy ethical\r\n");
+    $exp{B} = $self->make_message('alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ' .
+				  'cosby ' .
+				  'nu xi omicron pi rho sigma tau upsilon phi chi psi omega',
+				  body => 'Alef Bet Gimel Dalet He Vav Zayin Het Tet Yod Kaf ' .
+					  'sweater '.
+					  'Lamed Mem Nun Samekh Ayin Pe Tsadi Qof Resh Shin Tav' .
+					  "\r\n");
+
+    xlog "Index half the messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
+
+    xlog "Compress to tier 1";
+
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname_int);
+
+    $exp{C} = $self->make_message('message 3',
+				  mime_type => 'multipart/alternate',
+				  mime_boundary => 'NEMO',
+				  body =>
+"--NEMO\r\n" .
+"Content-Type: text/plain\r\n" .
+"\r\n" .
+"alpha locavore beta\r\n" .
+"--NEMO\r\n" .
+"Content-Type: text/html\r\n" .
+"\r\n" .
+"<div>gamma <i>locavore</i> <span class=\"foo\">delta</span></div>\r\n" .
+"--NEMO--\r\n");
+    $exp{D} = $self->make_message('message 4',
+				  body => 'alpha beta gamma delta ' .
+					  'put-a-bird-on-it ' .
+					  'epsilon zeta eta theta' .
+					  "\r\n");
+
+    xlog "Index the remaining messages";
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname_int);
+
+    xlog "Check the messages got there";
+    $self->check_messages(\%exp);
+
+    my @cases = (
+	{
+	    query => [ 'from', 'banksy' ],
+	    expected => [
+		{ uid => 1, part => 'FROM', str => 'Denim &lt;scenester@<b>banksy</b>.com&gt;' }
+	    ]
+	},
+	{
+	    query => [ 'subject', 'cred' ],
+	    expected => [
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' }
+	    ]
+	},
+	{
+	    query => [ 'body', 'ethical' ],
+	    expected => [
+		{ uid => 1, part => 'BODY', str => 'occupy <b>ethical</b> ' }
+	    ]
+	},
+	# TEXT matches any field
+	{
+	    query => [ 'text', 'ethical' ],
+	    expected => [
+		{ uid => 1, part => 'BODY', str => 'occupy <b>ethical</b> ' }
+	    ]
+	},
+	{
+	    query => [ 'text', 'cred' ],
+	    expected => [
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' },
+		{ uid => 1, part => 'HEADERS',
+		  str => "Transfer-Encoding: 7bit " .
+			 "Subject: synth <b>cred</b> " .
+			 "From: Denim &lt;scenester\@banksy." }
+	    ]
+	},
+	{
+	    query => [ 'text', 'denim' ],
+	    expected => [
+		{ uid => 1, part => 'FROM', str => '<b>Denim</b> &lt;scenester@banksy.com&gt;' },
+		{ uid => 1, part => 'HEADERS',
+		  str => "7bit " .
+			 "Subject: synth cred " .
+			 "From: <b>Denim</b> &lt;scenester\@banksy.com&gt; " .
+			 "Message-" }
+	    ]
+	},
+	{
+	    query => [ 'from', 'banksy', 'subject', 'cred' ],
+	    expected => [
+		{ uid => 1, part => 'FROM', str => 'Denim &lt;scenester@<b>banksy</b>.com&gt;' },
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' }
+	    ]
+	},
+	{
+	    query => [ 'or', 'from', 'banksy', 'subject', 'cred' ],
+	    expected => [
+		{ uid => 1, part => 'FROM', str => 'Denim &lt;scenester@<b>banksy</b>.com&gt;' },
+		{ uid => 1, part => 'SUBJECT', str => 'synth <b>cred</b>' }
+	    ]
+	},
+	# BODY has a 5-word context
+	{
+	    query => [ 'BODY', 'sweater' ],
+	    expected => [
+		{ uid => 2, part => 'BODY',
+		  str => 'Zayin Het Tet Yod Kaf ' .
+			 '<b>sweater</b> '.
+			 'Lamed Mem Nun Samekh Ayin' }
+	    ]
+	},
+	# SUBJECT has unlimited context (IRIS-2460)
+	{
+	    query => [ 'SUBJECT', 'cosby' ],
+	    expected => [
+		{ uid => 2, part => 'SUBJECT',
+		  str => 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ' .
+			 '<b>cosby</b> ' .
+			 'nu xi omicron pi rho sigma tau upsilon phi chi psi omega' }
+	    ]
+	},
+	# context is broken at the boundaries of text-like MIME parts
+	# and does not include MIME part headers (IRIS-2511)
+	{
+	    query => [ 'BODY', 'locavore' ],
+	    expected => [
+		{ uid => 3, part => 'BODY',
+		  str => 'alpha ' .
+			 '<b>locavore</b> ' .
+			 'beta' .
+			 '...' .
+			 'gamma ' .
+			 '<b>locavore</b> ' .
+			 'delta ' }
+	    ]
+	},
+	# search terms including punctuation are highlighted (IRIS-2510)
+	{
+	    query => [ 'BODY', 'bird' ],
+	    expected => [
+		{ uid => 4, part => 'BODY',
+		  str => 'beta gamma delta put-a-<b>bird</b>-on-it epsilon zeta eta' }
+	    ]
+	},
+	{
+	    query => [ 'BODY', 'a-bird' ],
+	    expected => [
+		{ uid => 4, part => 'BODY',
+		  str => 'alpha beta gamma delta put-<b>a</b>-<b>bird</b>-on-it epsilon zeta eta' }
+	    ]
+	},
+	{
+	    query => [ 'BODY', 'put-a-bird-on-it' ],
+	    expected => [
+		{ uid => 4, part => 'BODY',
+		  str => 'alpha beta gamma delta ' .
+			 '<b>put</b>-<b>a</b>-<b>bird</b>-<b>on</b>-<b>it</b> '.
+			 'epsilon zeta eta theta ' }
+	    ]
+	},
+    );
+
+    foreach my $c (@cases)
+    {
+	xlog "Run XSNIPPETS, query " . join(' ', @{$c->{query}});
+	$res = $self->{store}->xsnippets(
+	    "(($mboxname_ext $uidvalidity (" . join(' ', 1..scalar(keys %exp)) . ")))",
+	    'utf-8',
+	    'fuzzy', [@{$c->{query}}])
+	    or die "XSNIPPETS failed: $@";
+	delete $res->{highestmodseq} if defined $res;
+	$self->assert_deep_equals({
+	    snippet => [
+		map {
+		    {
+			mailbox => $mboxname_ext,
+			uidvalidity => $uidvalidity,
+			uid => $_->{uid},
+			part => $_->{part},
+			snippet => $_->{str}
+		    };
+		} @{$c->{expected}}
+	    ]
+	}, $res);
+    }
+}
+
 1;
