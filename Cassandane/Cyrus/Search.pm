@@ -4780,17 +4780,17 @@ sub test_imap_multitier
 
 	if ($uid == 1) {
 	    xlog "Compressing to tier 1";
-	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname);
+	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', -s => 't,m', -z => 'm', $mboxname);
 	}
 
 	if ($uid == 3) {
 	    xlog "Compressing to tier 2";
-	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 2, $mboxname);
+	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', -s => 't,m,d', -z => 'd' => 2, $mboxname);
 	}
 
 	if ($uid == 5) {
 	    xlog "Compressing to tier 1 via /tmp";
-	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, -T => '/tmp', $mboxname);
+	    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', -s => 't,m', -z => 'm', -T => '/tmp', $mboxname);
 	}
 
 	$uid++;
@@ -4824,7 +4824,7 @@ sub test_multitier_missing
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Compress to tier 1";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname);
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', -s => 't,m', -z => 'm', $mboxname);
 
     xlog "Add a second lot of messages";
     for (1..$N) {
@@ -4912,7 +4912,7 @@ sub test_multitier_missing_middle
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Compress to tier 2";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 2, $mboxname);
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', -s => 't,m,d', -z => 'd', $mboxname);
 
     xlog "Add a second lot of messages";
     for (1..$N) {
@@ -4927,7 +4927,7 @@ sub test_multitier_missing_middle
     $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-ivv', $mboxname);
 
     xlog "Compress to tier 1";
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname);
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', -s => 't,m', -z => 'd', $mboxname);
 
     # add a bonus message
     $self->make_message("Third Message");
@@ -5032,7 +5032,7 @@ sub test_imap_xsnippets_multitier
 
     xlog "Compress to tier 1";
 
-    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', '-z' => 1, $mboxname_int);
+    $self->{instance}->run_command({ cyrus => 1 }, 'squatter', '-vv', -s => 't,m', -z => 'm', $mboxname_int);
 
     $exp{C} = $self->make_message('message 3',
 				  mime_type => 'multipart/alternate',
