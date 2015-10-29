@@ -1654,26 +1654,25 @@ sub get_counted_string
 sub notifyd
 {
     my $dir = shift;
+    $0 = "cassandane notifyd";
 
     my @EVENTS;
-    tcp_server("unix/", "$dir/notify", sub {
+    my $s = tcp_server("unix/", "$dir/notify", sub {
         my $fh = shift;
         my $Handle = AnyEvent::Handle->new(
             fh => $fh,
         );
-        my $sub;
-        $sub = sub {
+        $Handle->push_read('Cyrus::DList' => 1, sub {
             my $dlist = $_[1];
             my $event = $dlist->as_perl();
             xlog "GOT EVENT: " . encode_json($event);
             push @EVENTS, $event;
             $Handle->push_write('Cyrus::DList' => scalar(Cyrus::DList->new_kvlist("OK")), 1);
             $Handle->push_shutdown();
-        };
-        $Handle->push_read('Cyrus::DList' => 1, $sub);
-    });
+        });
+    }, sub { warn "STARTED NOTIFY" . `lsof -n | grep $$` });
 
-    tcp_server("unix/", "$dir/getnotify", sub {
+    my $s2 = tcp_server("unix/", "$dir/getnotify", sub {
         my $fh = shift;
         my $Handle = AnyEvent::Handle->new(
             fh => $fh,
@@ -1682,7 +1681,13 @@ sub notifyd
         $Handle->push_write(json => \@EVENTS);
         $Handle->push_shutdown();
         @EVENTS = ();
-    });
+    }, sub { warn "STARTED GETNOTIFY" . `lsof -n | grep $$` });
+
+    opendir(DH, $dir);
+    my @items = readdir(DH);
+    closedir(DH);
+
+    xlog "RUNNING SERVICE IN $dir (@items)";
 
     AnyEvent->condvar()->recv();
 }
@@ -1692,12 +1697,20 @@ sub getnotify
     my ($self) = @_;
 
     my $basedir = $self->{basedir};
-    my $sock = IO::Socket::UNIX->new(
-       Type => SOCK_STREAM(),
-       Peer => "$basedir/run/getnotify",
-    );
-    my $line = $sock->getline();
-    my $data = decode_json($line);
+    my $path = "$basedir/run/getnotify";
+
+    my $data = eval {
+        my $sock = IO::Socket::UNIX->new(
+            Type => SOCK_STREAM(),
+            Peer => $path,
+        ) || die "Connection failed $!";
+        my $line = $sock->getline();
+        return decode_json($line);
+    };
+    if ($@) {
+        my $data = `ls -la $basedir/run; whoami; lsof -n | grep notify`;
+        xlog "Failed $@ ($data)";
+    }
 
     return $data;
 }

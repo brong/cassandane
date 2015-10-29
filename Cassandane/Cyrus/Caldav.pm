@@ -543,8 +543,6 @@ EOF
 
   $CalDAV->Request('PUT', $href, $card, 'Content-Type' => 'text/calendar');
 
-  sleep 10;
-
   my $newdata = $self->{instance}->getnotify();
   die Dumper($newdata);
 
