@@ -886,7 +886,7 @@ sub run_replication
 
     $self->_reconnect_all();
 
-    if ($user) {
+    if ($user and $self->{master_store}) {
         my $CR = Cyrus::CheckReplication->new(
             IMAPs1 => $self->{master_store}->get_client(),
             IMAPs2 => $self->{replica_store}->get_client(),

@@ -141,32 +141,12 @@ sub CheckUserQuota {
   RepeatCheck:
 
   my $s1Quota = $IMAPs1->getquotaroot('INBOX');
-  if (!$s1Quota) {
-    $Self->do_repeat($Repeat, $CyrusName, "No quota on master")
-      || goto RepeatCheck;
-    return;
-  }
   my $s1QuotaRoot = $s1Quota->{quotaroot}->[1] || '';
   my (undef, $s1MBUsed, $s1MBTotal) = @{$s1Quota->{$s1QuotaRoot} || []};
-  if (!$s1MBTotal) {
-    $Self->do_repeat($Repeat, $CyrusName, "No quota on master")
-      || goto RepeatCheck;
-    return;
-  }
 
   my $s2Quota = $IMAPs2->getquotaroot('INBOX');
-  if (!$s2Quota) {
-    $Self->do_repeat($Repeat, $CyrusName, "No quota on replica")
-      || goto RepeatCheck;
-    return;
-  }
   my $s2QuotaRoot = $s2Quota->{quotaroot}->[1] || '';
   my (undef, $s2MBUsed, $s2MBTotal) = @{$s2Quota->{$s2QuotaRoot} || []};
-  if (!$s2MBTotal) {
-    $Self->do_repeat($Repeat, $CyrusName, "No quota on replica")
-      || goto RepeatCheck;
-    return;
-  }
 
   if ($s1MBUsed != $s2MBUsed || $s1MBTotal != $s2MBTotal) {
     $Self->do_repeat($Repeat, $CyrusName, "Quota mismatch: $s1MBUsed/$s1MBTotal vs $s2MBUsed/$s2MBTotal")
