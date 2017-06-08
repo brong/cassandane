@@ -136,10 +136,10 @@ sub get
 
 sub get_bool
 {
-    my ($self, $n, $def) = @_;
-    $def = 'no' if !defined $def;
+    my ($self, $n) = @_;
     my $v = $self->get($n);
-    $v = $def if !defined $v;
+
+    die "Undefined boolean for $n" unless defined $v;
 
     return 1 if ($v =~ m/^yes$/i);
     return 1 if ($v =~ m/^true$/i);
