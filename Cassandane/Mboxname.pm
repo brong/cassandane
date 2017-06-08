@@ -51,10 +51,11 @@ sub new
 {
     my ($class, %params) = @_;
 
+    my $boxes = delete $params{boxes} || [];
     my $self = bless({
 	domain => delete $params{domain},
 	userid => delete $params{userid},
-	box => delete $params{box},	    # internal format, i.e. '.' separated
+	boxes => \@$boxes,
 	config => delete $params{config}
 		    || Cassandane::Config::default(),
 	# TODO is_deleted
@@ -104,11 +105,11 @@ sub clone
 
 sub domain { return shift->{domain}; }
 sub userid { return shift->{userid}; }
-sub box { return shift->{box}; }
+sub boxes { return shift->{boxes}; }
 
 sub _set
 {
-    my ($self, $domain, $userid, $box) = @_;
+    my ($self, $domain, $userid, @boxes) = @_;
 
     die "No Config specified"
 	unless defined $self->{config};
@@ -116,17 +117,15 @@ sub _set
     die "Domain specified but virtdomains not enabled in instance"
 	if (defined $domain && $virtdomains eq 'off');
 
-    $box = undef if defined $box && $box eq '';
-
     $self->{domain} = $domain;
     $self->{userid} = $userid;
-    $self->{box} = $box;
+    $self->{boxes} = \@boxes;
 }
 
 sub _reset
 {
     my ($self) = @_;
-    $self->_set(undef, undef, undef);
+    $self->_set();
 }
 
 sub _external_separator
@@ -134,7 +133,7 @@ sub _external_separator
     my ($self) = @_;
     die "No Config specified"
 	unless defined $self->{config};
-    return $self->{config}->get_bool('unixhierarchysep', 'off') ? '/' : '.';
+    return $self->{config}->get_bool('unixhierarchysep') ? '/' : '.';
 }
 
 sub _external_separator_regexp
@@ -142,9 +141,32 @@ sub _external_separator_regexp
     my ($self) = @_;
     die "No Config specified"
 	unless defined $self->{config};
-    return $self->{config}->get_bool('unixhierarchysep', 'off') ? qr/\// : qr/\./;
+    return $self->{config}->get_bool('unixhierarchysep') ? qr/\// : qr/\./;
 }
 
+sub _box_fromext
+{
+    my ($self, @parts) = @_;
+    my $sep = $self->_external_separator;
+
+    if ($sep eq '.') {
+        s/\^/./g for @parts;
+    }
+
+    return @parts;
+}
+
+sub _box_toext
+{
+    my ($self, @parts) = @_;
+    my $sep = $self->_external_separator;
+
+    if ($sep eq '.') {
+        s/\./^/g for @parts;
+    }
+
+    return @parts;
+}
 
 sub from_external
 {
@@ -163,7 +185,7 @@ sub from_external
     die "Bad external name \"$s\""
 	if !defined $userid || $prefix ne 'user';
 
-    $self->_set($domain, $userid, join('.', @comps));
+    $self->_set($domain, $self->_box_fromext($userid, @comps));
 }
 
 sub to_external
@@ -171,12 +193,30 @@ sub to_external
     my ($self) = @_;
 
     my @comps;
-    push(@comps, 'user', $self->{userid}) if defined $self->{userid};
-    push(@comps, split(/\./, $self->{box})) if defined $self->{box};
+    push(@comps, 'user', $self->_box_toext($self->{userid})) if defined $self->{userid};
+    push(@comps, $self->box_toext(@{$self->{boxes}}));
     my $s = join($self->_external_separator, @comps);
     $s .= '@' . $self->{domain} if defined $self->{domain};
 
     return ($s eq '' ? undef : $s);
+}
+
+sub _box_fromint
+{
+    my ($self, @parts) = @_;
+
+    s/\^/./g for @parts;
+
+    return @parts;
+}
+
+sub _box_toint
+{
+    my ($self, @parts) = @_;
+
+    s/\./^/g for @parts;
+
+    return @parts;
 }
 
 sub from_internal
@@ -194,7 +234,7 @@ sub from_internal
     my ($userid, $box) = ($local =~ m/^user\.([^.]*)(.*)$/);
     $box =~ s/^\.//;
 
-    $self->_set($domain, $userid, $box);
+    $self->_set($domain, $self->_box_fromint($userid, split /\./, $box));
 }
 
 sub to_internal
@@ -202,8 +242,8 @@ sub to_internal
     my ($self) = @_;
 
     my @comps;
-    push(@comps, 'user', $self->{userid}) if defined $self->{userid};
-    push(@comps, $self->{box}) if defined $self->{box};
+    push(@comps, 'user', $self->_box_toint($self->{userid})) if defined $self->{userid};
+    push(@comps, $self->_box_toint(@{$self->{boxes}}));
     my $s = join('.', @comps);
     $s = $self->{domain} . '!' . $s if defined $self->{domain};
 
@@ -223,7 +263,7 @@ sub from_username
     my ($userid, $domain) = ($s =~ m/^([^@]+)@([^@]+)$/);
     $userid ||= $s;
 
-    $self->_set($domain, $userid, undef);
+    $self->_set($domain, $userid);
 }
 
 sub to_username
@@ -253,14 +293,12 @@ sub make_child
 	    push(@comps, "" . $c);
 	}
     }
+
+    # NOTE: not handling '.' / ^ conversion
     map { die "Bad mboxname component \"$_\"" if index($_, $sep) >= 0; } @comps;
 
     my $child = $self->clone();
-    if (scalar @comps)
-    {
-	unshift(@comps, $child->{box}) if defined $child->{box};
-	$child->{box} = join('.', @comps);
-    }
+    push @{$child->{boxes}}, @comps;
 
     return $child;
 }
@@ -269,18 +307,11 @@ sub make_parent
 {
     my ($self, @args) = @_;
 
-    my @comps = split(/\./, $self->{box} || '');
-    pop(@comps);
-
     my $child = $self->clone();
-    if (scalar @comps)
-    {
-	$child->{box} = join('.', @comps);
-    }
-    else
-    {
-	$child->{box} = undef;
-    }
+
+    die "already at top level" unless @{$child->{boxes}};
+
+    pop @{$child->{boxes}};
 
     return $child;
 }
