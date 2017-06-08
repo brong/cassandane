@@ -68,7 +68,7 @@ sub test_default_ctor
     my $mb = Cassandane::Mboxname->new();
     $self->assert_null($mb->domain);
     $self->assert_null($mb->userid);
-    $self->assert_null($mb->box);
+    $self->assert_null($mb->boxes->[0]);
     $self->assert_null($mb->to_internal);
     $self->assert_null($mb->to_external);
     $self->assert_null($mb->to_username);
@@ -81,10 +81,13 @@ sub test_parts_ctor
     my $mb = Cassandane::Mboxname->new(
 	    domain => 'quinoa.com',
 	    userid => 'pickled',
-	    box => 'fanny.pack');
+	    boxes => ['fanny', 'pack']);
     $self->assert_str_equals($mb->domain, 'quinoa.com');
     $self->assert_str_equals($mb->userid, 'pickled');
-    $self->assert_str_equals($mb->box, 'fanny.pack');
+    $self->assert_str_equals($mb->boxes->[0], 'fanny');
+    $self->assert_str_equals($mb->boxes->[1], 'pack');
+    $self->assert_null($mb->boxes->[2]);
+    # XXX - fixme unixhs/altns
     $self->assert_str_equals($mb->to_internal,
 			     'quinoa.com!user.pickled.fanny.pack');
     $self->assert_str_equals($mb->to_external,
@@ -102,7 +105,10 @@ sub test_internal_ctor
 		internal => 'quinoa.com!user.pickled.fanny.pack');
     $self->assert_str_equals($mb->domain, 'quinoa.com');
     $self->assert_str_equals($mb->userid, 'pickled');
-    $self->assert_str_equals($mb->box, 'fanny.pack');
+    $self->assert_str_equals($mb->boxes->[0], 'fanny');
+    $self->assert_str_equals($mb->boxes->[1], 'pack');
+    $self->assert_null($mb->boxes->[2]);
+    # XXX - fixme unixhs/altns
     $self->assert_str_equals($mb->to_internal,
 			     'quinoa.com!user.pickled.fanny.pack');
     $self->assert_str_equals($mb->to_external,
@@ -120,7 +126,10 @@ sub test_external_ctor
 		external => 'user.pickled.fanny.pack@quinoa.com');
     $self->assert_str_equals($mb->domain, 'quinoa.com');
     $self->assert_str_equals($mb->userid, 'pickled');
-    $self->assert_str_equals($mb->box, 'fanny.pack');
+    $self->assert_str_equals($mb->boxes->[0], 'fanny');
+    $self->assert_str_equals($mb->boxes->[1], 'pack');
+    $self->assert_null($mb->boxes->[2]);
+    # XXX - fixme unixhs/altns
     $self->assert_str_equals($mb->to_internal,
 			     'quinoa.com!user.pickled.fanny.pack');
     $self->assert_str_equals($mb->to_external,
@@ -138,7 +147,7 @@ sub test_username_ctor
 		username => 'pickled@quinoa.com');
     $self->assert_str_equals($mb->domain, 'quinoa.com');
     $self->assert_str_equals($mb->userid, 'pickled');
-    $self->assert_null($mb->box);
+    $self->assert_null($mb->boxes->[0]);
     $self->assert_str_equals($mb->to_internal,
 			     'quinoa.com!user.pickled');
     $self->assert_str_equals($mb->to_external,
@@ -202,7 +211,9 @@ sub test_from_internal
     $mb->from_internal('quinoa.com!user.pickled.fanny.pack');
     $self->assert_str_equals($mb->domain, 'quinoa.com');
     $self->assert_str_equals($mb->userid, 'pickled');
-    $self->assert_str_equals($mb->box, 'fanny.pack');
+    $self->assert_str_equals($mb->boxes->[0], 'fanny');
+    $self->assert_str_equals($mb->boxes->[1], 'pack');
+    $self->assert_null($mb->boxes->[2]);
     $self->assert_str_equals($mb->to_internal,
 			     'quinoa.com!user.pickled.fanny.pack');
     $self->assert_str_equals($mb->to_external,
@@ -219,7 +230,9 @@ sub test_from_external
     $mb->from_external('user.pickled.fanny.pack@quinoa.com');
     $self->assert_str_equals($mb->domain, 'quinoa.com');
     $self->assert_str_equals($mb->userid, 'pickled');
-    $self->assert_str_equals($mb->box, 'fanny.pack');
+    $self->assert_str_equals($mb->boxes->[0], 'fanny');
+    $self->assert_str_equals($mb->boxes->[1], 'pack');
+    $self->assert_null($mb->boxes->[2]);
     $self->assert_str_equals($mb->to_internal,
 			     'quinoa.com!user.pickled.fanny.pack');
     $self->assert_str_equals($mb->to_external,
@@ -236,7 +249,7 @@ sub test_from_username
     $mb->from_username('pickled@quinoa.com');
     $self->assert_str_equals($mb->domain, 'quinoa.com');
     $self->assert_str_equals($mb->userid, 'pickled');
-    $self->assert_null($mb->box);
+    $self->assert_null($mb->boxes->[0]);
     $self->assert_str_equals($mb->to_internal,
 			     'quinoa.com!user.pickled');
     $self->assert_str_equals($mb->to_external,
