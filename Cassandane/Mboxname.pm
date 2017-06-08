@@ -201,6 +201,21 @@ sub to_external
     return ($s eq '' ? undef : $s);
 }
 
+sub to_userexternal
+{
+    my ($self, $userid) = @_;
+
+    my $altns = $self->{config}->get_bool('altnamespace');
+
+    if ($altns) {
+        die "NOT IMPLEMENTED YET";
+    }
+
+    if (defined $self->{userid} and $self->{userid} eq $userid) {
+        
+    }
+}
+
 sub _box_fromint
 {
     my ($self, @parts) = @_;
