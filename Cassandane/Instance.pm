@@ -1939,38 +1939,17 @@ sub get_servername
     return $self->{config}->get('servername');
 }
 
-sub _quote_part
-{
-    my $part = shift;
-    my $unixhs = shift;
-
-    die "invalid name part $part" if not defined $part;
-    die "invalid name part $part" if $part eq '';
-    die "invalid name part $part" if $part =~ m/\^/;
-
-    # dots need to be escaped in non-unixhs world
-    $part =~ s/\./^/g unless $unixhs;
-
-    return $part;
-}
-
 sub make_foldername
 {
-    my ($self, @parts) = @_;
+    my ($self, $username, @boxes) = @_;
 
-    my $unixhs = $self->{config}->get_bool('unixhierarchysep');
-    my $altns = $self->{config}->get_bool('altnamespace');
+    my $Mboxname = Cassandane::Mboxname->new(
+        config => $self->{config},
+        username => $username,
+        boxes => \@boxes,
+    );
 
-    return 'INBOX' unless @parts;
-
-    my @resultparts = map { _quote_part($_, $unixhs) } @parts;
-    unshift @resultparts, 'INBOX' unless $altns;
-
-    # XXX - other magic for alt namespace?
-
-    my $sep = $unixhs ? '/' : '.';
-
-    return join($sep, @resultparts);
+    return $Mboxname->to_external();
 }
 
 1;
