@@ -354,6 +354,44 @@ sub test_splitbrain_bothexpunge
     $self->check_messages(\%exp, store => $replica_store);
 }
 
+sub _listcat {
+    my $self = shift;
+    my $talk = shift;
+    my $list = $talk->list('', '*');
+    return join(',', sort map { $_->[2] } @$list);
+}
+
+#
+# Test replication of mailboxes created on master and replica
+#
+sub test_splitbrain_mailboxcreate
+{
+    my ($self) = @_;
+
+    my $master_store = $self->{master_store};
+    my $replica_store = $self->{replica_store};
+
+    my $mtalk = $master_store->get_client();
+    my $rtalk = $replica_store->get_client();
+
+    $mtalk->create("INBOX.mfolder");
+    $rtalk->create("INBOX.rfolder");
+
+    $self->assert_str_equals("INBOX,INBOX.mfolder", $self->_listcat($mtalk));
+    $self->assert_str_equals("INBOX,INBOX.rfolder", $self->_listcat($rtalk));
+
+    $self->run_replication();
+    $self->check_replication('cassandane');
+
+    # XXX - it looks like run_replication or check_replication closes the clients,
+    # so we need to get them again!
+    $mtalk = $master_store->get_client();
+    $rtalk = $replica_store->get_client();
+
+    $self->assert_str_equals("INBOX,INBOX.mfolder,INBOX.rfolder", $self->_listcat($mtalk));
+    $self->assert_str_equals("INBOX,INBOX.mfolder,INBOX.rfolder", $self->_listcat($rtalk));
+}
+
 # trying to reproduce error reported in https://git.cyrus.foundation/T228
 sub test_alternate_globalannots
     :NoStartInstances
