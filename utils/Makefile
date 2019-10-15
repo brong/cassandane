@@ -66,7 +66,7 @@ crash: $(crash_OBJS)
 syslog_SOURCE=syslog.c
 syslog_OBJS=$(syslog_SOURCE:.c=.o)
 syslog.so: $(syslog_OBJS)
-	$(LINK.c) -shared -ldl -o $@ $(syslog_OBJS)
+	$(LINK.c) -shared -Wl,--no-as-needed  -ldl -o $@ $(syslog_OBJS)
 
 clean:
 	$(RM) $(PROGRAMS) $(LIBS) *.o
